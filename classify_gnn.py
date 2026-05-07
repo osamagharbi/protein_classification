@@ -723,10 +723,22 @@ class LabeledSHREC25Dataset(SHREC25SplitDataset):
             self.graph_files = []
             missing = 0
             missing_examples = []
+            available_files = {}
+
+            # Index the split directory once. This avoids thousands of costly
+            # Path.exists() calls on remote or bucket-backed filesystems.
+            for path in split_dir.glob('*.bin'):
+                available_files[canonical_graph_id(path.stem)] = path
+                if path.stem.endswith('_graph'):
+                    available_files[path.stem] = path
+            for path in split_dir.glob('*.pt'):
+                available_files[canonical_graph_id(path.stem)] = path
+                if path.stem.endswith('_graph'):
+                    available_files[path.stem] = path
             
             for graph_name in self.label_dict.keys():
-                graph_file = resolve_graph_file(split_dir, graph_name)
-                if graph_file.exists():
+                graph_file = available_files.get(graph_name)
+                if graph_file is not None:
                     self.graph_files.append(graph_file)
                 else:
                     missing += 1
