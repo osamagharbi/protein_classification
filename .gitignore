@@ -1,0 +1,50 @@
+# Python cache/bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor/OS noise
+.vscode/
+.idea/
+.DS_Store
+
+# Experiment outputs and run artifacts
+experiments/
+runs/
+runs_pc/
+gvp-pytorch/
+
+# Trained models and tensor artifacts
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.onnx
+*.npy
+*.npz
+*.pkl
+*.joblib
+
+# Logs and generated result dumps
+*.log
+anomaly_results.json
+high_signal_results.json
+
+# Root-level notes/reports that are not required for code versioning
+CODE_REVIEW_FINAL.md
+CRITICAL_FIXES_V2.md
+FIXES_APPLIED.md
+GRAPHSAGE_ADDED.md
+PATCH_OBJECTIVE_RESULTS_SUMMARY.md
+ROTATION_AUGMENTATION_README.md
+VAL_SPLIT_ZERO_FIXES.md
+
+# Generic temp/cache files
+*.tmp
+*.temp
+*.cache
