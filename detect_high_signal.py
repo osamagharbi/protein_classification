@@ -7,13 +7,15 @@ Uses statistical thresholding to identify nodes with significantly high feature 
 import torch
 import dgl
 import numpy as np
+import argparse
+import os
 import matplotlib.pyplot as plt
 from pathlib import Path
 from tqdm import tqdm
 import json
 
 
-def load_graphs(root_dir, num_samples=20):
+def load_graphs(root_dir, num_samples=20, seed=42):
     """
     Load a sample of graphs.
 
@@ -33,7 +35,7 @@ def load_graphs(root_dir, num_samples=20):
     graph_files = sorted(train_dir.glob("*.bin"))
 
     # Sample random graphs
-    np.random.seed(42)
+    np.random.seed(seed)
     sampled_files = np.random.choice(graph_files, min(num_samples, len(graph_files)), replace=False)
 
     print(f"Loading {len(sampled_files)} graphs...")
@@ -329,9 +331,21 @@ def save_high_signal_results(all_results, feature_names, output_file='high_signa
 
 
 def main():
-    # Dataset configuration
-    root_dir = "/home/ogharbi/datasets/SHREC25/graphs/normalized_8feat_1k"
-    num_samples = 10  # Number of graphs to analyze
+    parser = argparse.ArgumentParser(description="Detect high-signal nodes in SHREC25 graphs")
+    parser.add_argument(
+        "--data-dir",
+        default=os.getenv("SHREC25_GRAPH_DATA_DIR", "datasets/SHREC25/graphs/normalized_8feat_1k"),
+        help="Root directory containing graph splits",
+    )
+    parser.add_argument("--num-samples", type=int, default=10)
+    parser.add_argument("--method", choices=["zscore", "percentile", "iqr", "mad"], default="zscore")
+    parser.add_argument("--threshold", type=float, default=2.0)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--output-json", default="high_signal_results.json")
+    args = parser.parse_args()
+
+    root_dir = args.data_dir
+    num_samples = args.num_samples
 
     # Feature names
     feature_names = [
@@ -346,8 +360,8 @@ def main():
     ]
 
     # Detection parameters
-    method = 'zscore'  # Options: 'zscore', 'percentile', 'iqr', 'mad'
-    threshold = 2.0    # For zscore: 2.0 = top ~2.3% | For percentile: 95 = top 5%
+    method = args.method
+    threshold = args.threshold
 
     print("=" * 80)
     print("High Signal Detection Analysis")
@@ -359,7 +373,7 @@ def main():
     print()
 
     # Load graphs
-    list_of_graphs, list_of_features, graph_names = load_graphs(root_dir, num_samples)
+    list_of_graphs, list_of_features, graph_names = load_graphs(root_dir, num_samples, seed=args.seed)
 
     print(f"\nLoaded {len(list_of_features)} graphs")
     print(f"Nodes per graph: {[f.shape[0] for f in list_of_features]}")
@@ -391,7 +405,7 @@ def main():
         )
 
     # Save results to JSON
-    save_high_signal_results(all_results, feature_names)
+    save_high_signal_results(all_results, feature_names, output_file=args.output_json)
 
     print("\n" + "=" * 80)
     print("Analysis complete!")

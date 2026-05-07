@@ -7,10 +7,9 @@ Checks for data issues, class imbalance, feature distributions, etc.
 import pandas as pd
 import numpy as np
 import dgl
-import torch
+import argparse
+import os
 from pathlib import Path
-from collections import Counter
-import json
 
 def load_labels(labels_dir):
     """Load train and test labels from CSV files."""
@@ -217,9 +216,18 @@ def check_stratification_feasibility(class_counts, val_split=0.2):
     return len(insufficient_classes) == 0
 
 def main():
-    # Configuration
-    data_dir = '/home/ogharbi/datasets/SHREC25/graphs/normalized_8feat_1k/'
-    labels_dir = data_dir  # Labels are in the same directory as the graphs
+    parser = argparse.ArgumentParser(description="Diagnose SHREC25 labels and graph files")
+    parser.add_argument(
+        "--data-dir",
+        default=os.getenv("SHREC25_GRAPH_DATA_DIR", "datasets/SHREC25/graphs/normalized_8feat_1k"),
+        help="Root directory containing train/test splits and labels CSV files",
+    )
+    parser.add_argument("--val-split", type=float, default=0.2)
+    parser.add_argument("--max-samples", type=int, default=100)
+    args = parser.parse_args()
+
+    data_dir = args.data_dir
+    labels_dir = data_dir
 
     print("="*80)
     print("SHREC25 DATASET DIAGNOSTIC")
@@ -239,11 +247,11 @@ def main():
     train_classes, test_classes, shared = check_label_coverage(train_df, test_df)
 
     # Check stratification feasibility
-    feasible = check_stratification_feasibility(train_counts, val_split=0.2)
+    feasible = check_stratification_feasibility(train_counts, val_split=args.val_split)
 
     # Analyze graph files
-    train_graph_stats = analyze_graph_files(data_dir, 'train', train_df, max_samples=100)
-    test_graph_stats = analyze_graph_files(data_dir, 'test', test_df, max_samples=100)
+    analyze_graph_files(data_dir, 'train', train_df, max_samples=args.max_samples)
+    analyze_graph_files(data_dir, 'test', test_df, max_samples=args.max_samples)
 
     # Final summary
     print(f"\n{'='*80}")

@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -207,7 +208,7 @@ def main():
     parser = argparse.ArgumentParser(description="Simple MLP classification for SHREC25")
 
     # Data
-    parser.add_argument('--data-dir', type=str, default='/home/osm/datasets/SHREC25/normalized_8feat',
+    parser.add_argument('--data-dir', type=str, default=os.getenv('SHREC25_GRAPH_DATA_DIR', 'datasets/SHREC25/graphs/normalized_8feat_1k'),
                        help='Dataset directory')
     parser.add_argument('--batch-size', type=int, default=32, help='Batch size')
     parser.add_argument('--num-workers', type=int, default=4, help='Dataloader workers')

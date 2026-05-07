@@ -7,6 +7,7 @@ Shows the spatial distribution of anomalous nodes on the protein surface.
 import torch
 import dgl
 import numpy as np
+import os
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from pathlib import Path
@@ -418,7 +419,7 @@ def parse_args():
 
     # Dataset parameters
     parser.add_argument('--root_dir', type=str,
-                       default="/home/ogharbi/datasets/SHREC25/graphs/normalized_8feat_1k",
+                       default=os.getenv('SHREC25_GRAPH_DATA_DIR', 'datasets/SHREC25/graphs/normalized_8feat_1k'),
                        help='Root directory containing graph data')
     parser.add_argument('--split', type=str, default='train',
                        choices=['train', 'test'],
@@ -473,7 +474,8 @@ def main():
             exp_name = f"{args.experiment_name}_{timestamp}"
         else:
             exp_name = f"graph_viz_{args.method}_t{args.threshold}_{timestamp}"
-        output_dir = Path(f"experiments/{exp_name}")
+        output_root = Path(os.getenv("SHREC25_VIZ_OUTPUT_ROOT", "experiments"))
+        output_dir = output_root / exp_name
     else:
         output_dir = Path(args.output_dir)
     

@@ -7,11 +7,13 @@ Shows per-graph feature distributions with overlaid histograms from multiple gra
 import torch
 import dgl
 import numpy as np
+import argparse
+import os
 import matplotlib.pyplot as plt
 from pathlib import Path
 from tqdm import tqdm
 
-def load_sample_graphs(root_dir, num_samples=10):
+def load_sample_graphs(root_dir, num_samples=10, seed=42):
     """
     Load a sample of graphs, keeping them separate (not concatenated).
 
@@ -30,7 +32,7 @@ def load_sample_graphs(root_dir, num_samples=10):
     graph_files = sorted(train_dir.glob("*.bin"))
 
     # Sample random graphs
-    np.random.seed(42)
+    np.random.seed(seed)
     sampled_files = np.random.choice(graph_files, min(num_samples, len(graph_files)), replace=False)
 
     print(f"Loading {len(sampled_files)} graphs...")
@@ -157,9 +159,18 @@ def plot_single_graph_histograms(features, feature_names, graph_name):
 
 
 def main():
-    # Dataset configuration
-    root_dir = "/home/ogharbi/datasets/SHREC25/graphs/normalized_8feat_1k"
-    num_samples = 10  # Number of graphs to sample for visualization
+    parser = argparse.ArgumentParser(description="Visualize SHREC25 feature histograms")
+    parser.add_argument(
+        "--data-dir",
+        default=os.getenv("SHREC25_GRAPH_DATA_DIR", "datasets/SHREC25/graphs/normalized_8feat_1k"),
+        help="Root directory containing train split",
+    )
+    parser.add_argument("--num-samples", type=int, default=10)
+    parser.add_argument("--seed", type=int, default=42)
+    args = parser.parse_args()
+
+    root_dir = args.data_dir
+    num_samples = args.num_samples
 
     # Feature names
     feature_names = [
@@ -181,7 +192,7 @@ def main():
     print()
 
     # Load features from sample graphs (keeping them separate)
-    list_of_features, graph_names = load_sample_graphs(root_dir, num_samples)
+    list_of_features, graph_names = load_sample_graphs(root_dir, num_samples, seed=args.seed)
 
     print(f"\nLoaded {len(list_of_features)} graphs")
     print(f"Nodes per graph: {[f.shape[0] for f in list_of_features]}")

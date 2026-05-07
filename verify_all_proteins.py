@@ -3,6 +3,8 @@
 Verify that all 9244 proteins in train_labels.csv can be loaded successfully.
 """
 
+import argparse
+import os
 import pandas as pd
 from pathlib import Path
 import dgl
@@ -80,7 +82,17 @@ def verify_proteins(data_dir, split='train'):
     return loadable, missing, errors
 
 def main():
-    data_dir = '/home/ogharbi/datasets/SHREC25/graphs/normalized_8feat_1k/'
+    parser = argparse.ArgumentParser(description="Verify all proteins can be loaded from SHREC25 graph files")
+    parser.add_argument(
+        "--data-dir",
+        default=os.getenv("SHREC25_GRAPH_DATA_DIR", "datasets/SHREC25/graphs/normalized_8feat_1k"),
+        help="Root directory containing splits and labels CSV files",
+    )
+    parser.add_argument("--expected-train", type=int, default=None)
+    parser.add_argument("--expected-test", type=int, default=None)
+    args = parser.parse_args()
+
+    data_dir = args.data_dir
 
     # Verify train set
     train_loadable, train_missing, train_errors = verify_proteins(data_dir, 'train')
@@ -90,14 +102,21 @@ def main():
     # Verify test set
     test_loadable, test_missing, test_errors = verify_proteins(data_dir, 'test')
 
+    expected_train = args.expected_train
+    expected_test = args.expected_test
+    if expected_train is None:
+        expected_train = len(pd.read_csv(Path(data_dir) / 'train_labels.csv'))
+    if expected_test is None:
+        expected_test = len(pd.read_csv(Path(data_dir) / 'test_labels.csv'))
+
     # Final summary
     print(f"\n{'='*80}")
     print(f"FINAL SUMMARY")
     print(f"{'='*80}")
-    print(f"\nTrain: {len(train_loadable)}/{9244} verified ✅" if len(train_loadable) == 9244 else f"Train: {len(train_loadable)}/{9244} verified ⚠️")
-    print(f"Test:  {len(test_loadable)}/{2308} verified ✅" if len(test_loadable) == 2308 else f"Test:  {len(test_loadable)}/{2308} verified ⚠️")
+    print(f"\nTrain: {len(train_loadable)}/{expected_train} verified ✅" if len(train_loadable) == expected_train else f"Train: {len(train_loadable)}/{expected_train} verified ⚠️")
+    print(f"Test:  {len(test_loadable)}/{expected_test} verified ✅" if len(test_loadable) == expected_test else f"Test:  {len(test_loadable)}/{expected_test} verified ⚠️")
 
-    if len(train_loadable) == 9244 and len(test_loadable) == 2308:
+    if len(train_loadable) == expected_train and len(test_loadable) == expected_test:
         print(f"\n🎉 DATASET READY FOR TRAINING!")
     else:
         print(f"\n⚠️  Some issues found - see details above")

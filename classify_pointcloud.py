@@ -13,7 +13,7 @@ Usage:
     python classify_pointcloud.py --model dgcnn
     python classify_pointcloud.py --model pointnet
     python classify_pointcloud.py --model pointnet2 --features electrostatic
-    python classify_pointcloud.py --model pointnet2 --data-dir /home/ogharbi/datasets/SHREC25/ssl_graphs_1k
+    python classify_pointcloud.py --model pointnet2 --data-dir datasets/SHREC25/ssl_graphs_1k
 """
 
 import argparse
@@ -21,6 +21,7 @@ import json
 import time
 from collections import Counter
 from pathlib import Path
+import os
 
 import numpy as np
 import pandas as pd
@@ -452,7 +453,7 @@ def evaluate(model, loader, criterion, device, desc='Eval'):
 
 def main():
     parser = argparse.ArgumentParser(description='Point cloud classifier for SHREC25')
-    parser.add_argument('--data-dir', default='/home/ogharbi/datasets/SHREC25/ssl_graphs_1k')
+    parser.add_argument('--data-dir', default=os.getenv('SHREC25_POINTCLOUD_DATA_DIR', 'datasets/SHREC25/ssl_graphs_1k'))
     parser.add_argument('--train-labels-csv', default=None,
                         help='Path to train labels CSV (overrides auto-discovery)')
     parser.add_argument('--val-labels-csv', default=None,
@@ -471,7 +472,7 @@ def main():
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--dgcnn-k', type=int, default=20, help='DGCNN k-NN')
-    parser.add_argument('--output-dir', default='runs_pc')
+    parser.add_argument('--output-dir', default=os.getenv('SHREC25_POINTCLOUD_OUTPUT_DIR', 'runs_pc'))
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)

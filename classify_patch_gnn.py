@@ -23,6 +23,7 @@ decomposer used in this workspace writes both.
 import argparse
 import csv
 import json
+import os
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
@@ -822,7 +823,7 @@ def main() -> None:
     parser.add_argument(
         "--data-dir",
         type=str,
-        default="/home/ogharbi/datasets/SHREC25/ssl_graph_patchs_1k",
+        default=os.getenv("SHREC25_PATCH_DATA_DIR", "datasets/SHREC25/ssl_graph_patchs_1k"),
         help="Patch dataset root containing train_set/test_set folders",
     )
     parser.add_argument(

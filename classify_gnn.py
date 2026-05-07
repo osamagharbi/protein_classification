@@ -24,6 +24,7 @@ See ROTATION_AUGMENTATION_README.md for detailed documentation.
 """
 
 import argparse
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -1030,7 +1031,7 @@ def main():
     parser = argparse.ArgumentParser(description="GNN classification for SHREC25")
 
     # Data
-    parser.add_argument('--data-dir', type=str, default='/home/ogharbi/datasets/SHREC25/graphs/normalized_8feat_1k',
+    parser.add_argument('--data-dir', type=str, default=os.getenv('SHREC25_GRAPH_DATA_DIR', 'datasets/SHREC25/graphs/normalized_8feat_1k'),
                        help='Dataset directory')
     parser.add_argument('--train-labels-csv', type=str, default=None,
                        help='Path to train labels CSV (defaults to <data-dir>/train_labels.csv)')

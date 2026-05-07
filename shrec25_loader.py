@@ -5,8 +5,12 @@ Loads pre-converted DGL graphs from .bin files with on-demand loading.
 
 import torch
 import dgl
+import os
 from pathlib import Path
 import json
+
+
+DEFAULT_GRAPH_DATA_DIR = os.getenv("SHREC25_GRAPH_DATA_DIR", "datasets/SHREC25/graphs/normalized_8feat_1k")
 
 
 def _resolve_split_dir(root_path: Path, split: str) -> Path:
@@ -69,7 +73,7 @@ class SHREC25Dataset:
     Loads graphs from .bin files only when accessed (lazy loading).
     This prevents loading all 11,555 graphs into RAM at once.
     """
-    def __init__(self, root_dir="/home/ogharbi/datasets/SHREC25/graphs/normalized_8feat_1k"):
+    def __init__(self, root_dir=DEFAULT_GRAPH_DATA_DIR):
         self.root_path = Path(root_dir)
 
         # Get all graph file paths
@@ -112,7 +116,7 @@ class SHREC25Dataset:
         return dgl_graph, label
 
 
-def load_shrec25_dataset(root_dir="/home/ogharbi/datasets/SHREC25/graphs/normalized_8feat_1k"):
+def load_shrec25_dataset(root_dir=DEFAULT_GRAPH_DATA_DIR):
     """
     Load SHREC25 protein mesh graphs in DGL format with on-demand loading.
 
@@ -137,7 +141,7 @@ class SHREC25SplitDataset:
     """
     On-demand dataset loader for single split (train or test).
     """
-    def __init__(self, root_dir="/home/ogharbi/datasets/SHREC25/graphs/normalized_8feat_1k", split="train"):
+    def __init__(self, root_dir=DEFAULT_GRAPH_DATA_DIR, split="train"):
         self.root_path = Path(root_dir)
         split_dir = _resolve_split_dir(self.root_path, split)
 
@@ -171,7 +175,7 @@ class SHREC25SplitDataset:
         return dgl_graph, label
 
 
-def load_shrec25_split(root_dir="/home/ogharbi/datasets/SHREC25/graphs/normalized_8feat_1k", split="train"):
+def load_shrec25_split(root_dir=DEFAULT_GRAPH_DATA_DIR, split="train"):
     """
     Load only train or test split with on-demand loading.
 
