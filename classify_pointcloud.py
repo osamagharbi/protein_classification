@@ -28,7 +28,9 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from dataset_split_guard import resolve_dataset_local_split_csvs
 from sklearn.metrics import balanced_accuracy_score, f1_score
+from shrec25_loader import infer_feature_order
 from torch.utils.data import DataLoader, Dataset, Subset
 from tqdm import tqdm
 
@@ -36,15 +38,36 @@ from tqdm import tqdm
 # Feature sets
 # ─────────────────────────────────────────────────────────────────────────────
 
-FEAT_NAMES = ['Potential_norm', 'NormalPotential_norm', 'nx', 'ny', 'nz', 'x_ssl', 'y_ssl', 'z_ssl']
-
-FEATURE_SETS = {
-    'all':           list(range(8)),   # all 8 features
-    'electrostatic': [0, 1],           # Potential_norm, NormalPotential_norm
-    'geometric':     [2, 3, 4],        # normals nx, ny, nz
-    'xyz':           [5, 6, 7],        # x_ssl, y_ssl, z_ssl
-    'no_xyz':        [0, 1, 2, 3, 4],  # electrostatics + normals
-}
+SCALAR_FEATURE_NAMES = ['Potential_norm', 'NormalPotential_norm']
+NORMAL_FEATURE_NAMES = ['nx', 'ny', 'nz']
+COORD_FEATURE_NAMES = ['x_ssl', 'y_ssl', 'z_ssl']
+CURVATURE_FEATURE_NAMES = [
+    'principal_curvature_min',
+    'principal_curvature_max',
+    'mean_curvature',
+    'gaussian_curvature',
+]
+ESSENTIAL_FEATURE_NAMES = [
+    *SCALAR_FEATURE_NAMES,
+    *NORMAL_FEATURE_NAMES,
+    *COORD_FEATURE_NAMES,
+]
+POINTCLOUD_FEATURE_CHOICES = [
+    'all',
+    'legacy8',
+    'electrostatic',
+    'scalars',
+    'geometric',
+    'normals',
+    'xyz',
+    'coords',
+    'no_xyz',
+    'curvature',
+    'legacy8_curvature',
+    'coords_normals',
+    'coords_normals_curvature',
+    'scalars_curvature',
+]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Dataset
@@ -54,13 +77,79 @@ def canonical_id(stem: str) -> str:
     return stem.replace('_graph', '')
 
 
+def resolve_split_dir(data_dir: Path, split: str) -> Path:
+    split_dir = data_dir / f'{split}_set'
+    if split_dir.exists():
+        return split_dir
+    split_dir = data_dir / split
+    if split_dir.exists():
+        return split_dir
+    raise FileNotFoundError(f'Split dir not found for {split} in {data_dir}')
+
+
+def infer_dataset_feature_names(split_dir: Path):
+    files = sorted(split_dir.glob('*.pt'))
+    if not files:
+        raise FileNotFoundError(f'No .pt files found in {split_dir}')
+    data = torch.load(files[0], map_location='cpu', weights_only=False)
+    feat = torch.as_tensor(data['x'])
+    meta = data.get('meta', {}) if isinstance(data.get('meta', {}), dict) else {}
+    return infer_feature_order(int(feat.shape[1]), meta)
+
+
+def _resolve_named_feature_indices(feature_names, target_names, preset_name):
+    lower_to_index = {name.lower(): idx for idx, name in enumerate(feature_names)}
+    indices = []
+    missing = []
+    for name in target_names:
+        idx = lower_to_index.get(name.lower())
+        if idx is None:
+            missing.append(name)
+        else:
+            indices.append(idx)
+    if missing:
+        available = ', '.join(feature_names)
+        raise ValueError(
+            f"Point-cloud feature preset '{preset_name}' is missing required features {missing}. "
+            f"Available features: {available}"
+        )
+    return indices
+
+
+def resolve_pointcloud_feature_selection(feature_names, preset):
+    preset = preset.lower()
+    preset_map = {
+        'legacy8': ESSENTIAL_FEATURE_NAMES,
+        'electrostatic': SCALAR_FEATURE_NAMES,
+        'scalars': SCALAR_FEATURE_NAMES,
+        'geometric': NORMAL_FEATURE_NAMES,
+        'normals': NORMAL_FEATURE_NAMES,
+        'xyz': COORD_FEATURE_NAMES,
+        'coords': COORD_FEATURE_NAMES,
+        'curvature': CURVATURE_FEATURE_NAMES,
+        'legacy8_curvature': [*ESSENTIAL_FEATURE_NAMES, *CURVATURE_FEATURE_NAMES],
+        'coords_normals': [*NORMAL_FEATURE_NAMES, *COORD_FEATURE_NAMES],
+        'coords_normals_curvature': [*NORMAL_FEATURE_NAMES, *COORD_FEATURE_NAMES, *CURVATURE_FEATURE_NAMES],
+        'scalars_curvature': [*SCALAR_FEATURE_NAMES, *CURVATURE_FEATURE_NAMES],
+    }
+
+    if preset == 'all':
+        indices = list(range(len(feature_names)))
+    elif preset == 'no_xyz':
+        xyz_indices = set(_resolve_named_feature_indices(feature_names, COORD_FEATURE_NAMES, 'coords'))
+        indices = [idx for idx in range(len(feature_names)) if idx not in xyz_indices]
+    else:
+        if preset not in preset_map:
+            raise ValueError(f"Unknown point-cloud feature preset '{preset}'")
+        indices = _resolve_named_feature_indices(feature_names, preset_map[preset], preset)
+
+    selected_feature_names = [feature_names[idx] for idx in indices]
+    return indices, selected_feature_names
+
+
 def load_labels(data_dir: Path, split: str, labels_csv=None):
     """Load labels for the given split, searching standard candidate paths."""
-    split_dir = data_dir / f'{split}_set'
-    if not split_dir.exists():
-        split_dir = data_dir / split
-    if not split_dir.exists():
-        raise FileNotFoundError(f'Split dir not found for {split} in {data_dir}')
+    split_dir = resolve_split_dir(data_dir, split)
 
     graph_stems = {canonical_id(p.stem) for p in split_dir.glob('*.pt')}
 
@@ -149,7 +238,7 @@ class ProteinPointCloudDataset(Dataset):
         data = torch.load(path, map_location='cpu', weights_only=False)
 
         pos  = data['pos'].float()                      # [N, 3] unit-ball xyz
-        feat = data['x'].float()                        # [N, 8]
+        feat = data['x'].float()                        # [N, F]
         feat[:, :2] = feat[:, :2].clamp(-5.0, 5.0)    # clip electrostatic outliers
 
         if self.feature_indices:
@@ -458,9 +547,11 @@ def main():
                         help='Path to train labels CSV (overrides auto-discovery)')
     parser.add_argument('--val-labels-csv', default=None,
                         help='Path to val labels CSV for intra-class split (skips internal split)')
+    parser.add_argument('--allow-split-mismatch', action='store_true',
+                        help='Allow overriding dataset-local train_split.csv/val_split.csv with custom label CSVs')
     parser.add_argument('--model', choices=['pointnet', 'pointnet2', 'dgcnn'], default='pointnet2')
-    parser.add_argument('--features', choices=list(FEATURE_SETS), default='all',
-                        help='Feature subset to use (default: all 8)')
+    parser.add_argument('--features', choices=POINTCLOUD_FEATURE_CHOICES, default='all',
+                        help='Feature subset to use. Supports curvature-aware presets when present in the dataset metadata')
     parser.add_argument('--n-points', type=int, default=1000, help='Points per cloud (random crop)')
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--batch-size', type=int, default=32)
@@ -480,16 +571,31 @@ def main():
 
     device = torch.device(f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu')
     data_dir = Path(args.data_dir)
-    feat_idx = FEATURE_SETS[args.features]
+    args.train_labels_csv, args.val_labels_csv, split_guard_messages = resolve_dataset_local_split_csvs(
+        data_dir,
+        args.train_labels_csv,
+        args.val_labels_csv,
+        allow_mismatch=args.allow_split_mismatch,
+        train_flag='--train-labels-csv',
+        val_flag='--val-labels-csv',
+    )
+    for message in split_guard_messages:
+        print(message)
+    if args.val_labels_csv is not None and args.val_split > 0:
+        print('Validation strategy: external split CSV in use; --val-split is ignored.')
+
+    train_dir = resolve_split_dir(data_dir, 'train')
+    test_dir = resolve_split_dir(data_dir, 'test')
+    feature_names = infer_dataset_feature_names(train_dir)
+    feat_idx, selected_feature_names = resolve_pointcloud_feature_selection(feature_names, args.features)
+    print(f'Available features: {feature_names}')
+    print(f'Selected features: {selected_feature_names}')
 
     # ── Labels ───────────────────────────────────────────────────────────────
     train_labels, nc_train = load_labels(data_dir, 'train', args.train_labels_csv)
     test_labels,  nc_test  = load_labels(data_dir, 'test')
     num_classes = max(nc_train, nc_test)
     print(f'Classes: {num_classes}  |  Train proteins: {len(train_labels)}  |  Test proteins: {len(test_labels)}')
-
-    train_dir = data_dir / 'train_set'
-    test_dir  = data_dir / 'test_set'
 
     # ── Split ─────────────────────────────────────────────────────────────────
     if args.val_labels_csv is not None:
@@ -526,7 +632,7 @@ def main():
         model = DGCNN(len(feat_idx), num_classes, k=args.dgcnn_k).to(device)
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f'Model: {args.model}  |  Params: {n_params:,}  |  Features: {args.features} {[FEAT_NAMES[i] for i in feat_idx]}')
+    print(f'Model: {args.model}  |  Params: {n_params:,}  |  Features: {args.features} {selected_feature_names}')
     print(f'Device: {device}')
 
     # ── Optimizer & scheduler ─────────────────────────────────────────────────

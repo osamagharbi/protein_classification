@@ -42,13 +42,17 @@ import dgl
 
 from classify_gnn import (
     canonical_graph_id,
+    FEATURE_PRESET_CHOICES,
     FocalLoss,
     GNNClassifier,
     compute_metrics,
     load_graph_file,
+    resolve_feature_preset,
+    resolve_xyz_feature_indices,
     rotate_graph_z,
     select_topk_populated_classes,
 )
+from dataset_split_guard import resolve_dataset_local_split_csvs
 from fix_training import compute_class_weights
 
 
@@ -850,6 +854,11 @@ def main() -> None:
         default=None,
         help="Optional CSV listing test graph ids via a protein_id column",
     )
+    parser.add_argument(
+        "--allow-split-mismatch",
+        action="store_true",
+        help="Allow overriding dataset-local train_split.csv/val_split.csv with custom graph split CSVs",
+    )
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
     parser.add_argument("--num-workers", type=int, default=4, help="Dataloader workers")
     parser.add_argument(
@@ -883,28 +892,47 @@ def main() -> None:
     parser.add_argument("--num-layers", type=int, default=3, help="Number of GNN layers")
     parser.add_argument("--num-heads", type=int, default=4, help="Number of attention heads (GAT)")
     parser.add_argument(
+        "--gin-mlp-layers",
+        type=int,
+        default=2,
+        help="For GIN only: number of Linear layers inside each post-aggregation MLP",
+    )
+    parser.add_argument(
+        "--gin-mlp-hidden-dim",
+        type=int,
+        default=None,
+        help="For GIN only: hidden width inside each post-aggregation MLP (default: same as --hidden-dim)",
+    )
+    parser.add_argument(
         "--pooling",
         type=str,
         default="mean",
-        choices=["mean", "max", "sum"],
+        choices=["mean", "max", "sum", "attention"],
         help="Pooling method",
     )
     parser.add_argument("--dropout", type=float, default=0.3, help="Dropout rate")
+    parser.add_argument(
+        "--feature-preset",
+        type=str,
+        default=None,
+        choices=FEATURE_PRESET_CHOICES,
+        help="Named feature subset. Supports legacy8 plus curvature-aware presets. Cannot use with --drop-features, --keep-features, or --skip-xyz.",
+    )
     parser.add_argument(
         "--drop-features",
         type=int,
         nargs="*",
         default=None,
-        help="Feature indices to drop",
+        help="Feature indices to drop. Index meaning depends on the dataset feature order shown at startup.",
     )
     parser.add_argument(
         "--keep-features",
         type=int,
         nargs="*",
         default=None,
-        help="Feature indices to keep",
+        help="Feature indices to keep. Index meaning depends on the dataset feature order shown at startup.",
     )
-    parser.add_argument("--skip-xyz", action="store_true", help="Shortcut for dropping features 0,1,2")
+    parser.add_argument("--skip-xyz", action="store_true", help="Drop coordinate features by name when metadata is available")
 
     parser.add_argument("--rotation-aug", action="store_true", help="Apply random Z-rotation to patches during training")
     parser.add_argument("--rotation-ssl", action="store_true", help="Predict patch class and rotation jointly")
@@ -949,6 +977,8 @@ def main() -> None:
 
     if args.drop_features is not None and args.keep_features is not None:
         raise ValueError("Cannot use both --drop-features and --keep-features")
+    if args.feature_preset is not None and (args.drop_features is not None or args.keep_features is not None or args.skip_xyz):
+        raise ValueError("--feature-preset cannot be combined with --drop-features, --keep-features, or --skip-xyz")
     if not 0.0 <= args.val_split < 1.0:
         raise ValueError(f"--val-split must be in range [0.0, 1.0), got {args.val_split}")
     if args.sampler_power < 0.0:
@@ -975,6 +1005,14 @@ def main() -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
 
     device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() else "cpu")
+    args.train_graphs_csv, args.val_graphs_csv, split_guard_messages = resolve_dataset_local_split_csvs(
+        args.data_dir,
+        args.train_graphs_csv,
+        args.val_graphs_csv,
+        allow_mismatch=args.allow_split_mismatch,
+        train_flag='--train-graphs-csv',
+        val_flag='--val-graphs-csv',
+    )
 
     print(f"Run directory: {run_dir}")
     print(f"Using device: {device}")
@@ -1000,13 +1038,23 @@ def main() -> None:
     print(f"Dropout:       {args.dropout}")
     print(f"Learning rate: {args.lr}")
     print(f"Epochs:        {args.epochs}")
-    print(f"Val split:     {args.val_split:.1%}")
+    if args.val_graphs_csv is not None:
+        print(f"Val split:     external CSV ({Path(args.val_graphs_csv).name})")
+    else:
+        print(f"Val split:     {args.val_split:.1%}")
     print(f"Loss type:     {args.loss_type}")
     print(f"Sampler:       {'balanced' if args.balanced_sampler else 'standard shuffle'}")
     print(f"{'=' * 70}\n")
 
-    if args.skip_xyz:
-        print("Feature mode:  Skipping XYZ coordinates (features 0-2)")
+    for message in split_guard_messages:
+        print(message)
+    if args.val_graphs_csv is not None and args.val_split > 0:
+        print("Validation strategy: external split CSV in use; --val-split is ignored.\n")
+
+    if args.feature_preset is not None:
+        print(f"Feature mode:  Named preset '{args.feature_preset}'")
+    elif args.skip_xyz:
+        print("Feature mode:  Skipping XYZ coordinates")
     elif args.drop_features is not None:
         print(f"Feature mode:  Dropping features {args.drop_features}")
     elif args.keep_features is not None:
@@ -1134,16 +1182,26 @@ def main() -> None:
 
     sample_graph = prepare_patch_graph(load_graph_file(train_records[0].path))
     in_dim = int(sample_graph.ndata["attr"].shape[1])
+    feature_names = getattr(sample_graph, "feature_names", [f"feature_{idx}" for idx in range(in_dim)])
+    print(f"Available features: {feature_names}")
     feature_indices: Optional[List[int]] = None
-    if args.skip_xyz:
-        feature_indices = list(range(3, in_dim))
-        print(f"Input dim:     {in_dim} -> {len(feature_indices)} (skipping XYZ)")
+    if args.feature_preset is not None:
+        feature_indices, selected_feature_names = resolve_feature_preset(feature_names, args.feature_preset)
+        print(f"Input dim:     {in_dim} -> {len(feature_indices)} (preset: {args.feature_preset})")
+        print(f"Features:      {selected_feature_names}")
+    elif args.skip_xyz:
+        xyz_indices, _ = resolve_xyz_feature_indices(feature_names)
+        feature_indices = [idx for idx in range(in_dim) if idx not in xyz_indices]
+        print(f"Input dim:     {in_dim} -> {len(feature_indices)} (skipping XYZ: indices {xyz_indices})")
+        print(f"Features:      {[feature_names[idx] for idx in feature_indices]}")
     elif args.drop_features is not None:
         feature_indices = [idx for idx in range(in_dim) if idx not in args.drop_features]
         print(f"Input dim:     {in_dim} -> {len(feature_indices)} (dropped {args.drop_features})")
+        print(f"Features:      {[feature_names[idx] for idx in feature_indices]}")
     elif args.keep_features is not None:
         feature_indices = list(args.keep_features)
         print(f"Input dim:     {in_dim} -> {len(feature_indices)} (keeping {args.keep_features})")
+        print(f"Features:      {[feature_names[idx] for idx in feature_indices]}")
     else:
         print(f"Input dim:     {in_dim} (using all features)")
 
@@ -1216,6 +1274,8 @@ def main() -> None:
         dropout=args.dropout,
         feature_indices=feature_indices,
         use_rotation_head=args.rotation_ssl,
+        gin_mlp_layers=args.gin_mlp_layers,
+        gin_mlp_hidden_dim=args.gin_mlp_hidden_dim,
     ).to(device)
     print(f"Model parameters: {sum(param.numel() for param in model.parameters()):,}")
 

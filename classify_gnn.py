@@ -39,9 +39,123 @@ from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, p
 
 import dgl
 from dgl.nn.pytorch import GATConv, GraphConv, GINConv, SAGEConv
+from dataset_split_guard import resolve_dataset_local_split_csvs
 from gvp_dgl import DGLGVPEncoder
-from shrec25_loader import SHREC25SplitDataset
+from shrec25_loader import SHREC25SplitDataset, infer_feature_order
 from fix_training import compute_class_weights, create_robust_train_val_split
+
+
+SCALAR_FEATURE_NAMES = [
+    'Potential_norm',
+    'NormalPotential_norm',
+]
+NORMAL_FEATURE_NAMES = [
+    'nx',
+    'ny',
+    'nz',
+]
+COORD_FEATURE_NAMES = [
+    'x_ssl',
+    'y_ssl',
+    'z_ssl',
+]
+CURVATURE_FEATURE_NAMES = [
+    'principal_curvature_min',
+    'principal_curvature_max',
+    'mean_curvature',
+    'gaussian_curvature',
+]
+ESSENTIAL_FEATURE_NAMES = [
+    *SCALAR_FEATURE_NAMES,
+    *NORMAL_FEATURE_NAMES,
+    *COORD_FEATURE_NAMES,
+]
+FEATURE_PRESET_CHOICES = [
+    'essential',
+    'legacy8',
+    'coords',
+    'normals',
+    'scalars',
+    'coords_normals',
+    'curvature',
+    'essential_curvature',
+    'legacy8_curvature',
+    'coords_normals_curvature',
+    'scalars_curvature',
+]
+
+
+def resolve_feature_preset(feature_names, preset):
+    preset = preset.lower()
+    preset_map = {
+        'essential': ESSENTIAL_FEATURE_NAMES,
+        'legacy8': ESSENTIAL_FEATURE_NAMES,
+        'coords': COORD_FEATURE_NAMES,
+        'normals': NORMAL_FEATURE_NAMES,
+        'scalars': SCALAR_FEATURE_NAMES,
+        'coords_normals': [*NORMAL_FEATURE_NAMES, *COORD_FEATURE_NAMES],
+        'curvature': CURVATURE_FEATURE_NAMES,
+        'essential_curvature': [*ESSENTIAL_FEATURE_NAMES, *CURVATURE_FEATURE_NAMES],
+        'legacy8_curvature': [*ESSENTIAL_FEATURE_NAMES, *CURVATURE_FEATURE_NAMES],
+        'coords_normals_curvature': [*NORMAL_FEATURE_NAMES, *COORD_FEATURE_NAMES, *CURVATURE_FEATURE_NAMES],
+        'scalars_curvature': [*SCALAR_FEATURE_NAMES, *CURVATURE_FEATURE_NAMES],
+    }
+
+    if preset not in preset_map:
+        raise ValueError(f"Unknown feature preset '{preset}'")
+
+    target_names = preset_map[preset]
+    lower_to_index = {name.lower(): idx for idx, name in enumerate(feature_names)}
+    indices = []
+    missing = []
+    for name in target_names:
+        idx = lower_to_index.get(name.lower())
+        if idx is None:
+            missing.append(name)
+        else:
+            indices.append(idx)
+
+    if missing:
+        if all(name.startswith('feature_') for name in feature_names) and preset in ('essential', 'legacy8') and len(feature_names) >= 8:
+            indices = list(range(8))
+        else:
+            available = ', '.join(feature_names)
+            raise ValueError(
+                f"Feature preset '{preset}' is missing required features {missing}. "
+                f"Available features: {available}"
+            )
+
+    selected_names = [feature_names[i] for i in indices]
+    return indices, selected_names
+
+
+def resolve_xyz_feature_indices(feature_names):
+    try:
+        return resolve_feature_preset(feature_names, 'coords')
+    except ValueError as exc:
+        if all(name.startswith('feature_') for name in feature_names) and len(feature_names) >= 3:
+            return list(range(3)), feature_names[:3]
+        available = ', '.join(feature_names)
+        raise ValueError(
+            "Could not infer coordinate feature indices for --skip-xyz. "
+            f"Available features: {available}. Use --drop-features explicitly."
+        ) from exc
+
+
+class AttentionPooling(nn.Module):
+    """Learned attention pooling over nodes in each graph."""
+
+    def __init__(self, in_dim):
+        super().__init__()
+        self.gate = nn.Linear(in_dim, 1)
+
+    def forward(self, g, h):
+        with g.local_scope():
+            g.ndata['h'] = h
+            g.ndata['pool_score'] = self.gate(h)
+            g.ndata['pool_alpha'] = dgl.softmax_nodes(g, 'pool_score')
+            g.ndata['pool_weighted_h'] = g.ndata['h'] * g.ndata['pool_alpha']
+            return dgl.sum_nodes(g, 'pool_weighted_h')
 
 
 def resolve_split_dir(root_dir, split):
@@ -83,12 +197,17 @@ def load_graph_file(graph_file):
     """Load a graph from .bin or .pt into DGL format."""
     if graph_file.suffix == '.bin':
         graphs, _ = dgl.load_graphs(str(graph_file))
-        return graphs[0]
+        g = graphs[0]
+        if 'attr' in g.ndata and not hasattr(g, 'feature_names'):
+            g.feature_names = infer_feature_order(g.ndata['attr'].shape[1])
+        return g
 
     if graph_file.suffix == '.pt':
         data = torch.load(graph_file, map_location='cpu', weights_only=False)
         if not isinstance(data, dict):
             raise TypeError(f"Unsupported .pt content in {graph_file}")
+
+        meta = data.get('meta', {}) if isinstance(data.get('meta', {}), dict) else {}
 
         edge_index = data.get('edge_index_mesh', data.get('edge_index'))
         feat = data.get('x', data.get('pos'))
@@ -108,8 +227,15 @@ def load_graph_file(graph_file):
         # to prevent outliers (observed up to ±12.5σ) from dominating max pooling
         feat[:, :2] = feat[:, :2].clamp(-5.0, 5.0)
         g.ndata['attr'] = feat
+        g.feature_names = infer_feature_order(g.ndata['attr'].shape[1], meta)
         if 'pos' in data and torch.is_tensor(data['pos']):
             g.ndata['pos'] = data['pos'].float()
+        for key in ('xyz_raw', 'normals', 'scalars_raw', 'scalars_norm'):
+            if key in data and torch.is_tensor(data[key]):
+                tensor = data[key].float()
+                if tensor.ndim == 1:
+                    tensor = tensor.unsqueeze(-1)
+                g.ndata[key] = tensor
         return g
 
     raise ValueError(f"Unsupported graph format: {graph_file}")
@@ -140,6 +266,42 @@ def rotate_graph_z(g, angle_deg):
     
     # Clone graph
     g_rot = g.clone()
+
+    def _rotate_tensor(key):
+        if key not in g_rot.ndata:
+            return
+        g_rot.ndata[key] = torch.matmul(g_rot.ndata[key], rotation_matrix.T)
+
+    def _recompute_edge_geometry():
+        if 'pos' in g_rot.ndata:
+            coords = g_rot.ndata['pos']
+        elif 'xyz_raw' in g_rot.ndata:
+            coords = g_rot.ndata['xyz_raw']
+        else:
+            return
+
+        src, dst = g_rot.edges(order='eid')
+        rel_pos = coords[dst] - coords[src]
+        rel_dist = torch.linalg.norm(rel_pos, dim=-1, keepdim=True)
+        rel_dir = rel_pos / rel_dist.clamp_min(1e-8)
+
+        g_rot.edata['rel_pos'] = rel_pos
+        g_rot.edata['rel_dist'] = rel_dist
+        g_rot.edata['rel_dir'] = rel_dir
+
+        edge_attr_terms = [rel_dist]
+        if 'normals' in g_rot.ndata:
+            src_normals = g_rot.ndata['normals'][src]
+            dst_normals = g_rot.ndata['normals'][dst]
+            normal_dot = (src_normals * dst_normals).sum(dim=-1, keepdim=True)
+            src_normal_dot_rel = (src_normals * rel_dir).sum(dim=-1, keepdim=True)
+            dst_normal_dot_rel = (dst_normals * rel_dir).sum(dim=-1, keepdim=True)
+            g_rot.edata['normal_dot'] = normal_dot
+            g_rot.edata['src_normal_dot_rel'] = src_normal_dot_rel
+            g_rot.edata['dst_normal_dot_rel'] = dst_normal_dot_rel
+            edge_attr_terms.extend([normal_dot, src_normal_dot_rel, dst_normal_dot_rel])
+
+        g_rot.edata['edge_attr'] = torch.cat(edge_attr_terms, dim=-1)
     
     # Extract and rotate XYZ coordinates (first 3 features)
     feat = g_rot.ndata['attr'].clone()
@@ -149,6 +311,11 @@ def rotate_graph_z(g, angle_deg):
     # Update features with rotated coordinates
     feat[:, :3] = xyz_rot
     g_rot.ndata['attr'] = feat
+
+    _rotate_tensor('pos')
+    _rotate_tensor('xyz_raw')
+    _rotate_tensor('normals')
+    _recompute_edge_geometry()
     
     return g_rot
 
@@ -282,6 +449,15 @@ class EGNNLayer(nn.Module):
         return h_out, pos_out
 
 
+def _match_feature_dim(tensor, target_dim):
+    if tensor.size(-1) == target_dim:
+        return tensor
+    if tensor.size(-1) > target_dim:
+        return tensor[:, :target_dim]
+    pad = tensor.new_zeros(tensor.size(0), target_dim - tensor.size(-1))
+    return torch.cat([tensor, pad], dim=-1)
+
+
 class GNNClassifier(nn.Module):
     """
     GNN classifier using graph structure.
@@ -289,9 +465,31 @@ class GNNClassifier(nn.Module):
     Architecture:
         Input → GNN layers → Pool → MLP → Output
     """
+    @staticmethod
+    def _build_gin_mlp(in_dim, out_dim, hidden_dim, num_layers):
+        if num_layers < 1:
+            raise ValueError(f"gin_mlp_layers must be >= 1 (got {num_layers})")
+        if hidden_dim < 1:
+            raise ValueError(f"gin_mlp_hidden_dim must be >= 1 (got {hidden_dim})")
+
+        if num_layers == 1:
+            return nn.Sequential(nn.Linear(in_dim, out_dim))
+
+        layers = []
+        current_dim = in_dim
+        for _ in range(num_layers - 1):
+            layers.append(nn.Linear(current_dim, hidden_dim))
+            layers.append(nn.BatchNorm1d(hidden_dim))
+            layers.append(nn.ReLU())
+            current_dim = hidden_dim
+        layers.append(nn.Linear(current_dim, out_dim))
+        return nn.Sequential(*layers)
+
     def __init__(self, in_dim, hidden_dim, num_classes, num_layers=3,
                  model_type='gat', num_heads=4, pooling='mean', dropout=0.3, 
-                 feature_indices=None, use_rotation_head=False):
+                 feature_indices=None, use_rotation_head=False,
+                 gin_mlp_layers=2, gin_mlp_hidden_dim=None,
+                 egnn_geometry_mode='dist_only'):
         super().__init__()
 
         # Enforce minimum layers for consistent architecture
@@ -303,7 +501,21 @@ class GNNClassifier(nn.Module):
         self.dropout = dropout
         self.feature_indices = feature_indices
         self.use_rotation_head = use_rotation_head
+        self.egnn_geometry_mode = egnn_geometry_mode
+        self.egnn_edge_feature_dim = 4
+        self.gin_mlp_layers = gin_mlp_layers
+        self.gin_mlp_hidden_dim = hidden_dim if gin_mlp_hidden_dim is None else gin_mlp_hidden_dim
         raw_in_dim = in_dim
+
+        if self.egnn_geometry_mode not in ('dist_only', 'full'):
+            raise ValueError(
+                f"Unsupported egnn_geometry_mode={self.egnn_geometry_mode}. "
+                "Expected 'dist_only' or 'full'."
+            )
+        if self.gin_mlp_layers < 1:
+            raise ValueError(f"gin_mlp_layers must be >= 1 (got {self.gin_mlp_layers})")
+        if self.gin_mlp_hidden_dim < 1:
+            raise ValueError(f"gin_mlp_hidden_dim must be >= 1 (got {self.gin_mlp_hidden_dim})")
         
         # Adjust input dimension based on feature selection
         if feature_indices is not None:
@@ -374,11 +586,11 @@ class GNNClassifier(nn.Module):
         elif model_type == 'gin':
             # GIN uses MLP for each layer
             # First layer
-            mlp = nn.Sequential(
-                nn.Linear(in_dim, hidden_dim),
-                nn.BatchNorm1d(hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim)
+            mlp = self._build_gin_mlp(
+                in_dim=in_dim,
+                out_dim=hidden_dim,
+                hidden_dim=self.gin_mlp_hidden_dim,
+                num_layers=self.gin_mlp_layers,
             )
             self.convs.append(GINConv(mlp, 'sum', learn_eps=True))
             self.norms.append(nn.LayerNorm(hidden_dim))
@@ -386,11 +598,11 @@ class GNNClassifier(nn.Module):
 
             # Hidden layers (not including last)
             for _ in range(num_layers - 2):
-                mlp = nn.Sequential(
-                    nn.Linear(hidden_dim, hidden_dim),
-                    nn.BatchNorm1d(hidden_dim),
-                    nn.ReLU(),
-                    nn.Linear(hidden_dim, hidden_dim)
+                mlp = self._build_gin_mlp(
+                    in_dim=hidden_dim,
+                    out_dim=hidden_dim,
+                    hidden_dim=self.gin_mlp_hidden_dim,
+                    num_layers=self.gin_mlp_layers,
                 )
                 self.convs.append(GINConv(mlp, 'sum', learn_eps=True))
                 self.norms.append(nn.LayerNorm(hidden_dim))
@@ -398,11 +610,11 @@ class GNNClassifier(nn.Module):
 
             # Last layer - no dropout after final layer
             if num_layers > 1:
-                mlp = nn.Sequential(
-                    nn.Linear(hidden_dim, hidden_dim),
-                    nn.BatchNorm1d(hidden_dim),
-                    nn.ReLU(),
-                    nn.Linear(hidden_dim, hidden_dim)
+                mlp = self._build_gin_mlp(
+                    in_dim=hidden_dim,
+                    out_dim=hidden_dim,
+                    hidden_dim=self.gin_mlp_hidden_dim,
+                    num_layers=self.gin_mlp_layers,
                 )
                 self.convs.append(GINConv(mlp, 'sum', learn_eps=True))
                 self.norms.append(nn.LayerNorm(hidden_dim))
@@ -430,10 +642,11 @@ class GNNClassifier(nn.Module):
             # EGNN operates on coordinates and features separately
             # First layer - project input features to hidden_dim
             self.input_proj = nn.Linear(in_dim, hidden_dim)
+            edge_dim = 1 if self.egnn_geometry_mode == 'dist_only' else 3 + self.egnn_edge_feature_dim
             
             # EGNN layers (using custom EGNNLayer)
             for i in range(num_layers):
-                self.convs.append(EGNNLayer(hidden_dim, hidden_dim, hidden_dim, edge_dim=1, residual=True))
+                self.convs.append(EGNNLayer(hidden_dim, hidden_dim, hidden_dim, edge_dim=edge_dim, residual=True))
                 self.norms.append(nn.LayerNorm(hidden_dim))
                 if i < num_layers - 1:
                     self.dropouts.append(nn.Dropout(dropout))
@@ -454,6 +667,8 @@ class GNNClassifier(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_dim // 2, num_classes)
         )
+
+        self.attention_pool = AttentionPooling(hidden_dim) if pooling == 'attention' else None
         
         # Optional rotation prediction head (for SSL multi-task learning)
         if use_rotation_head:
@@ -463,6 +678,25 @@ class GNNClassifier(nn.Module):
                 nn.Dropout(dropout),
                 nn.Linear(hidden_dim // 2, 4)  # 4 rotation classes (0°, 90°, 180°, 270°)
             )
+
+    def _build_egnn_edge_attr(self, g, pos, src, dst):
+        current_rel_pos = pos[src] - pos[dst]
+
+        if self.egnn_geometry_mode == 'dist_only':
+            return torch.norm(current_rel_pos, dim=1, keepdim=True)
+
+        base_rel_pos = g.edata.get('rel_pos', current_rel_pos)
+        if base_rel_pos.shape != current_rel_pos.shape:
+            base_rel_pos = current_rel_pos
+        base_rel_pos = base_rel_pos.to(device=pos.device, dtype=pos.dtype)
+
+        if 'edge_attr' in g.edata:
+            edge_attr = g.edata['edge_attr'].to(device=pos.device, dtype=pos.dtype)
+        else:
+            edge_attr = torch.norm(current_rel_pos, dim=1, keepdim=True)
+
+        edge_attr = _match_feature_dim(edge_attr, self.egnn_edge_feature_dim)
+        return torch.cat([base_rel_pos, edge_attr], dim=-1)
 
     def forward(self, g, feat, pos=None):
         """Forward pass through GNN.
@@ -499,8 +733,8 @@ class GNNClassifier(nn.Module):
             src, dst = g.edges()
             edge_index = torch.stack([src, dst], dim=0)
             
-            # Compute edge attributes (distances - rotation invariant)
-            edge_attr = torch.norm(pos[src] - pos[dst], dim=1, keepdim=True)
+            # Build edge attributes from the graph geometry contract when available.
+            edge_attr = self._build_egnn_edge_attr(g, pos, src, dst)
             
             # EGNN layers
             for i, conv in enumerate(self.convs):
@@ -561,6 +795,8 @@ class GNNClassifier(nn.Module):
                 hg = dgl.max_nodes(g, 'h')
             elif self.pooling == 'sum':
                 hg = dgl.sum_nodes(g, 'h')
+            elif self.pooling == 'attention':
+                hg = self.attention_pool(g, h)
             else:
                 raise ValueError(f"Unknown pooling method: {self.pooling}")
 
@@ -590,7 +826,19 @@ def load_labels(dataset_root, split='train', labels_csv=None):
     parent = root.parent
     candidates = []
     if labels_csv is not None:
-        candidates.append(Path(labels_csv))
+        label_path = Path(labels_csv)
+        candidates.append(label_path)
+        if not label_path.is_absolute():
+            candidates.extend([
+                root / label_path,
+                parent / label_path,
+                parent / 'graphs' / label_path.name,
+                parent / 'graphs_old' / label_path.name,
+                parent / 'graphs_pyg' / label_path.name,
+                parent / 'graphs_dgl' / label_path.name,
+                parent / 'pc' / label_path.name,
+                parent / 'pc_8f' / label_path.name,
+            ])
     else:
         candidates.extend([
             root / f"{split}_labels.csv",
@@ -1046,12 +1294,14 @@ def main():
     parser.add_argument('--data-dir', type=str, default=os.getenv('SHREC25_GRAPH_DATA_DIR', 'datasets/SHREC25/graphs/normalized_8feat_1k'),
                        help='Dataset directory')
     parser.add_argument('--train-labels-csv', type=str, default=None,
-                       help='Path to train labels CSV (defaults to <data-dir>/train_labels.csv)')
+                       help='Path to train labels CSV (defaults to auto-discovery; dataset-local train_split.csv is preferred when present)')
     parser.add_argument('--test-labels-csv', type=str, default=None,
                        help='Path to test labels CSV (defaults to <data-dir>/test_labels.csv)')
     parser.add_argument('--val-labels-csv', type=str, default=None,
                        help='Path to val labels CSV for intra-class split (e.g. Mamba3D val_split.csv). '
                             'When provided, skips internal train/val split and loads val as a separate dataset.')
+    parser.add_argument('--allow-split-mismatch', action='store_true',
+                       help='Allow overriding dataset-local train_split.csv/val_split.csv with custom label CSVs')
     parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
     parser.add_argument('--num-workers', type=int, default=4, help='Dataloader workers')
 
@@ -1061,17 +1311,24 @@ def main():
     parser.add_argument('--hidden-dim', type=int, default=256, help='Hidden dimension')
     parser.add_argument('--num-layers', type=int, default=3, help='Number of GNN layers')
     parser.add_argument('--num-heads', type=int, default=4, help='Number of attention heads (GAT)')
-    parser.add_argument('--pooling', type=str, default='mean', choices=['mean', 'max', 'sum'],
+    parser.add_argument('--gin-mlp-layers', type=int, default=2,
+                       help='For GIN only: number of Linear layers inside each post-aggregation MLP')
+    parser.add_argument('--gin-mlp-hidden-dim', type=int, default=None,
+                       help='For GIN only: hidden width inside each post-aggregation MLP (default: same as --hidden-dim)')
+    parser.add_argument('--pooling', type=str, default='mean', choices=['mean', 'max', 'sum', 'attention'],
                        help='Pooling method')
     parser.add_argument('--dropout', type=float, default=0.3, help='Dropout rate')
+    parser.add_argument('--egnn-geometry-mode', type=str, default='dist_only', choices=['dist_only', 'full'],
+                       help='For EGNN only: dist_only uses scalar edge distance, full uses graph rel_pos plus rich edge_attr when available')
+    parser.add_argument('--feature-preset', type=str, default=None,
+                       choices=FEATURE_PRESET_CHOICES,
+                       help='Named feature subset. Supports legacy8 plus curvature-aware presets. Cannot use with --drop-features, --keep-features, or --skip-xyz')
     parser.add_argument('--drop-features', type=int, nargs='*', default=None,
-                       help='Feature indices to drop (e.g., --drop-features 0 1 2 to drop XYZ). '
-                            'Features: [0-2]=XYZ coords, [3-5]=normals, [6-7]=surface properties')
+                       help='Feature indices to drop. Index meaning depends on the dataset feature order shown at startup; prefer --feature-preset when possible.')
     parser.add_argument('--keep-features', type=int, nargs='*', default=None,
-                       help='Feature indices to keep (e.g., --keep-features 3 4 5 6 7). '
-                            'Cannot use with --drop-features')
+                       help='Feature indices to keep. Index meaning depends on the dataset feature order shown at startup; prefer --feature-preset when possible.')
     parser.add_argument('--skip-xyz', action='store_true',
-                       help='Shortcut for --drop-features 0 1 2 (skip XYZ coordinates)')
+                       help='Drop coordinate features by name when metadata is available; otherwise falls back to the legacy index behavior')
 
     # Rotation Augmentation (SSL-inspired)
     parser.add_argument('--rotation-aug', action='store_true',
@@ -1098,6 +1355,9 @@ def main():
                        help='Classification loss type (default: ce)')
     parser.add_argument('--focal-gamma', type=float, default=2.0,
                        help='Focal loss gamma (used when --loss-type focal)')
+    parser.add_argument('--class-weight-method', type=str, default='auto',
+                       choices=['auto', 'none', 'inverse', 'inverse_sqrt', 'effective_samples'],
+                       help='How to weight classes in the loss. auto uses inverse_sqrt unless --balanced-sampler is enabled, then disables loss weights.')
     parser.add_argument('--balanced-sampler', action='store_true',
                        help='Use class-balanced WeightedRandomSampler for training batches')
     parser.add_argument('--sampler-power', type=float, default=1.0,
@@ -1126,6 +1386,15 @@ def main():
     # Set seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+
+    args.train_labels_csv, args.val_labels_csv, split_guard_messages = resolve_dataset_local_split_csvs(
+        args.data_dir,
+        args.train_labels_csv,
+        args.val_labels_csv,
+        allow_mismatch=args.allow_split_mismatch,
+        train_flag='--train-labels-csv',
+        val_flag='--val-labels-csv',
+    )
 
     # Create run directory
     if args.run_name is None:
@@ -1156,23 +1425,37 @@ def main():
         print(f"Num heads:     {args.num_heads}")
     print(f"Pooling:       {args.pooling}")
     print(f"Dropout:       {args.dropout}")
+    if args.model == 'egnn':
+        print(f"EGNN geom:     {args.egnn_geometry_mode}")
     print(f"Learning rate: {args.lr}")
     print(f"Epochs:        {args.epochs}")
-    print(f"Val split:     {args.val_split:.1%}")
+    if args.val_labels_csv is not None:
+        print(f"Val split:     external CSV ({Path(args.val_labels_csv).name})")
+    else:
+        print(f"Val split:     {args.val_split:.1%}")
     print(f"Loss type:     {args.loss_type}")
     if args.loss_type == 'focal':
         print(f"Focal gamma:   {args.focal_gamma}")
     print(f"Sampler:       {'balanced' if args.balanced_sampler else 'standard shuffle'}")
     print(f"{'='*70}\n")
 
+    for message in split_guard_messages:
+        print(message)
+    if args.val_labels_csv is not None and args.val_split > 0:
+        print("Validation strategy: external split CSV in use; --val-split is ignored.\n")
+
     # Determine which features to use (before loading datasets)
     feature_indices = None
     if args.drop_features is not None and args.keep_features is not None:
         raise ValueError("Cannot use both --drop-features and --keep-features")
+    if args.feature_preset is not None and (args.drop_features is not None or args.keep_features is not None or args.skip_xyz):
+        raise ValueError("--feature-preset cannot be combined with --drop-features, --keep-features, or --skip-xyz")
     
     # Note: We'll validate and print actual feature info after loading a sample graph
-    if args.skip_xyz:
-        print("Feature mode:  Skipping XYZ coordinates (features 0-2)")
+    if args.feature_preset is not None:
+        print(f"Feature mode:  Named preset '{args.feature_preset}'")
+    elif args.skip_xyz:
+        print("Feature mode:  Skipping XYZ coordinates")
     elif args.drop_features is not None:
         print(f"Feature mode:  Dropping features {args.drop_features}")
     elif args.keep_features is not None:
@@ -1237,20 +1520,30 @@ def main():
     # Get input dimension and finalize feature selection
     sample_graph, _ = full_train_dataset[0]
     in_dim = sample_graph.ndata['attr'].shape[1]
+    feature_names = getattr(sample_graph, 'feature_names', [f'feature_{i}' for i in range(in_dim)])
+    print(f"Available features: {feature_names}")
     
     # Finalize which features to use
-    if args.skip_xyz:
-        # Shortcut: drop features 0, 1, 2 (XYZ)
-        feature_indices = list(range(3, in_dim))
-        print(f"Input dim:     {in_dim} → {len(feature_indices)} (skipping XYZ: features 0-2)")
+    if args.feature_preset is not None:
+        feature_indices, selected_feature_names = resolve_feature_preset(feature_names, args.feature_preset)
+        print(f"Input dim:     {in_dim} → {len(feature_indices)} (preset: {args.feature_preset})")
+        print(f"Features:      {selected_feature_names}")
+    elif args.skip_xyz:
+        xyz_indices, xyz_feature_names = resolve_xyz_feature_indices(feature_names)
+        feature_indices = [idx for idx in range(in_dim) if idx not in xyz_indices]
+        kept_feature_names = [feature_names[idx] for idx in feature_indices]
+        print(f"Input dim:     {in_dim} → {len(feature_indices)} (skipping XYZ: indices {xyz_indices})")
+        print(f"Features:      {kept_feature_names}")
     elif args.drop_features is not None:
         # Drop specific features
         feature_indices = [i for i in range(in_dim) if i not in args.drop_features]
         print(f"Input dim:     {in_dim} → {len(feature_indices)} (dropped features: {args.drop_features})")
+        print(f"Features:      {[feature_names[i] for i in feature_indices]}")
     elif args.keep_features is not None:
         # Keep only specific features
         feature_indices = args.keep_features
         print(f"Input dim:     {in_dim} → {len(feature_indices)} (keeping features: {args.keep_features})")
+        print(f"Features:      {[feature_names[i] for i in feature_indices]}")
     else:
         # Use all features
         print(f"Input dim:     {in_dim} (using all features)")
@@ -1343,7 +1636,10 @@ def main():
         pooling=args.pooling,
         dropout=args.dropout,
         feature_indices=feature_indices,
-        use_rotation_head=args.rotation_ssl
+        use_rotation_head=args.rotation_ssl,
+        gin_mlp_layers=args.gin_mlp_layers,
+        gin_mlp_hidden_dim=args.gin_mlp_hidden_dim,
+        egnn_geometry_mode=args.egnn_geometry_mode,
     ).to(device)
 
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -1361,25 +1657,35 @@ def main():
             print("✓ Test-time augmentation: 4-rotation ensemble")
         print(f"{'='*70}\n")
 
-    # Compute class weights to handle extreme imbalance
-    print("\nComputing class weights for imbalanced dataset...")
-    # Build train label dict using actual dataset filenames (not CSV order)
-    train_label_dict = {}
-    if args.val_labels_csv is not None or args.val_split == 0:
-        # External val split or no val: use full train_labels for class weights
-        train_label_dict = train_labels
-    else:
-        # Internal split: use only training subset indices for class weights
-        for i in train_indices:
-            graph_name = canonical_graph_id(full_train_dataset.graph_files[i].stem)
-            train_label_dict[graph_name] = train_labels[graph_name]
+    class_weight_method = args.class_weight_method
+    if class_weight_method == 'auto':
+        class_weight_method = 'none' if args.balanced_sampler else 'inverse_sqrt'
+        if args.balanced_sampler:
+            print("\nBalanced sampler enabled: disabling loss class weights to avoid double reweighting.")
 
-    class_weights = compute_class_weights(
-        train_label_dict,
-        num_classes,
-        device,
-        method='inverse_sqrt'  # Smoother than 'inverse', better for extreme imbalance
-    )
+    class_weights = None
+    if class_weight_method == 'none':
+        print("\nClass weights disabled.")
+    else:
+        # Compute class weights to handle extreme imbalance
+        print("\nComputing class weights for imbalanced dataset...")
+        # Build train label dict using actual dataset filenames (not CSV order)
+        train_label_dict = {}
+        if args.val_labels_csv is not None or args.val_split == 0:
+            # External val split or no val: use full train_labels for class weights
+            train_label_dict = train_labels
+        else:
+            # Internal split: use only training subset indices for class weights
+            for i in train_indices:
+                graph_name = canonical_graph_id(full_train_dataset.graph_files[i].stem)
+                train_label_dict[graph_name] = train_labels[graph_name]
+
+        class_weights = compute_class_weights(
+            train_label_dict,
+            num_classes,
+            device,
+            method=class_weight_method,
+        )
 
     # Optimizer and loss
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -1388,10 +1694,16 @@ def main():
     )
     if args.loss_type == 'ce':
         criterion = nn.CrossEntropyLoss(weight=class_weights)
-        print("Using weighted CrossEntropyLoss with class weights")
+        if class_weights is None:
+            print("Using CrossEntropyLoss without class weights")
+        else:
+            print(f"Using CrossEntropyLoss with class weights ({class_weight_method})")
     else:
         criterion = FocalLoss(alpha=class_weights, gamma=args.focal_gamma)
-        print(f"Using FocalLoss (gamma={args.focal_gamma}) with class weights")
+        if class_weights is None:
+            print(f"Using FocalLoss (gamma={args.focal_gamma}) without class weights")
+        else:
+            print(f"Using FocalLoss (gamma={args.focal_gamma}) with class weights ({class_weight_method})")
 
     # Training loop
     print(f"\n{'='*70}")

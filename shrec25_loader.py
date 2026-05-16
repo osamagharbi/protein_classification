@@ -3,6 +3,8 @@ Custom loader for SHREC25 protein mesh graphs.
 Loads pre-converted DGL graphs from .bin files with on-demand loading.
 """
 
+from __future__ import annotations
+
 import torch
 import dgl
 import os
@@ -11,6 +13,125 @@ import json
 
 
 DEFAULT_GRAPH_DATA_DIR = os.getenv("SHREC25_GRAPH_DATA_DIR", "datasets/SHREC25/graphs/normalized_8feat_1k")
+
+LEGACY_SHREC25_FEATURE_ORDER = [
+    "Potential_norm",
+    "NormalPotential_norm",
+    "nx",
+    "ny",
+    "nz",
+    "x_ssl",
+    "y_ssl",
+    "z_ssl",
+]
+
+CURVATURE_SHREC25_FEATURE_ORDER = [
+    "principal_curvature_min",
+    "principal_curvature_max",
+    "mean_curvature",
+    "gaussian_curvature",
+]
+
+CURVATURE_ENRICHED_SHREC25_FEATURE_ORDER = [
+    *LEGACY_SHREC25_FEATURE_ORDER,
+    *CURVATURE_SHREC25_FEATURE_ORDER,
+]
+
+
+def infer_feature_order(feature_dim: int, meta: dict | None = None):
+    if meta:
+        for key in ("feature_order_x", "feature_names", "x_feature_names"):
+            value = meta.get(key)
+            if isinstance(value, (list, tuple)) and len(value) == feature_dim:
+                return [str(name) for name in value]
+
+    if feature_dim == len(LEGACY_SHREC25_FEATURE_ORDER):
+        return list(LEGACY_SHREC25_FEATURE_ORDER)
+
+    if feature_dim == len(CURVATURE_ENRICHED_SHREC25_FEATURE_ORDER):
+        return list(CURVATURE_ENRICHED_SHREC25_FEATURE_ORDER)
+
+    return [f"feature_{idx}" for idx in range(feature_dim)]
+
+
+def _optional_float_tensor(data_dict, key):
+    value = data_dict.get(key)
+    if value is None:
+        return None
+    tensor = torch.as_tensor(value).float()
+    if tensor.ndim == 1:
+        tensor = tensor.unsqueeze(-1)
+    return tensor
+
+
+def _attach_node_geometry(g, data_dict=None):
+    fields = ("pos", "xyz_raw", "normals", "scalars_raw", "scalars_norm")
+    if data_dict is None:
+        for key in fields:
+            if key not in g.ndata:
+                continue
+            tensor = torch.as_tensor(g.ndata[key]).float()
+            if tensor.ndim == 1:
+                tensor = tensor.unsqueeze(-1)
+            g.ndata[key] = tensor
+        return
+
+    for key in fields:
+        tensor = _optional_float_tensor(data_dict, key)
+        if tensor is None:
+            continue
+        if tensor.size(0) != g.num_nodes():
+            raise ValueError(
+                f"Node geometry field '{key}' has {tensor.size(0)} rows for graph with {g.num_nodes()} nodes"
+            )
+        g.ndata[key] = tensor
+
+
+def _attach_edge_geometry(g):
+    if "pos" in g.ndata:
+        coords = g.ndata["pos"]
+    elif "xyz_raw" in g.ndata:
+        coords = g.ndata["xyz_raw"]
+    else:
+        return
+
+    src, dst = g.edges(order="eid")
+    rel_pos = coords[dst] - coords[src]
+    rel_dist = torch.linalg.norm(rel_pos, dim=-1, keepdim=True)
+    rel_dir = rel_pos / rel_dist.clamp_min(1e-8)
+
+    g.edata["rel_pos"] = rel_pos
+    g.edata["rel_dist"] = rel_dist
+    g.edata["rel_dir"] = rel_dir
+
+    edge_attr_terms = [rel_dist]
+    if "normals" in g.ndata:
+        src_normals = g.ndata["normals"][src]
+        dst_normals = g.ndata["normals"][dst]
+        normal_dot = (src_normals * dst_normals).sum(dim=-1, keepdim=True)
+        src_normal_dot_rel = (src_normals * rel_dir).sum(dim=-1, keepdim=True)
+        dst_normal_dot_rel = (dst_normals * rel_dir).sum(dim=-1, keepdim=True)
+
+        g.edata["normal_dot"] = normal_dot
+        g.edata["src_normal_dot_rel"] = src_normal_dot_rel
+        g.edata["dst_normal_dot_rel"] = dst_normal_dot_rel
+        edge_attr_terms.extend([normal_dot, src_normal_dot_rel, dst_normal_dot_rel])
+
+    g.edata["edge_attr"] = torch.cat(edge_attr_terms, dim=-1)
+
+
+def _finalize_graph(g, data_dict=None):
+    g = dgl.remove_self_loop(g)
+    g = dgl.add_self_loop(g)
+    if "attr" in g.ndata:
+        g.ndata["attr"] = torch.as_tensor(g.ndata["attr"]).float()
+        if data_dict is not None:
+            g.feature_names = infer_feature_order(g.ndata["attr"].shape[1], data_dict.get("meta", {}))
+        elif not hasattr(g, "feature_names"):
+            g.feature_names = infer_feature_order(g.ndata["attr"].shape[1])
+    _attach_node_geometry(g, data_dict=data_dict)
+    _attach_edge_geometry(g)
+    return g
 
 
 def _resolve_split_dir(root_path: Path, split: str) -> Path:
@@ -39,7 +160,7 @@ def _load_graph_any(graph_file: Path):
     """Load either a DGL .bin graph or a PyTorch .pt graph dict into DGL."""
     if graph_file.suffix == ".bin":
         graphs, _ = dgl.load_graphs(str(graph_file))
-        return graphs[0]
+        return _finalize_graph(graphs[0])
 
     if graph_file.suffix == ".pt":
         data = torch.load(graph_file, map_location="cpu", weights_only=False)
@@ -60,9 +181,7 @@ def _load_graph_any(graph_file: Path):
 
         g = dgl.graph((edge_index[0], edge_index[1]), num_nodes=int(feat.shape[0]))
         g.ndata["attr"] = feat.float()
-        if "pos" in data and torch.is_tensor(data["pos"]):
-            g.ndata["pos"] = data["pos"].float()
-        return g
+        return _finalize_graph(g, data_dict=data)
 
     raise ValueError(f"Unsupported graph format: {graph_file}")
 
