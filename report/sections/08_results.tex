@@ -50,6 +50,9 @@ classes for a fair comparison).
     \quad HierGIN 8D + RI-GIN         & all 8 features       & 0.865 & 0.813 & 0.800 & 0.863 \\
     \quad HierGIN 14D + RI-GIN         & global norm      & 0.860 & 0.807 & 0.793 & 0.852 \\
     \midrule
+    \multicolumn{6}{l}{\textit{HierGIN --- LRF edge features (negative result)}} \\
+    \quad HierGIN 8D + LRF-GIN        & all 8 features       & 0.838 & 0.776 & 0.766 & 0.817 \\
+    \midrule
     \multicolumn{6}{l}{\textit{HierGIN --- patch-level scalar injection (negative results)$\;\ddagger$}} \\
     \quad + inject 2-feat             & Pot + NormPot        & ---   & ---   & 0.790 & ---   \\
     \quad + inject 8-feat             & all signal scalars   & ---   & ---   & 0.778 & ---   \\
@@ -89,16 +92,17 @@ classes for a fair comparison).
         vs.\ $+$11.8\,pp for HierGIN --- reflecting a qualitative difference
         in how well each architecture exploits geometric information.
 
-  \item \textbf{RI-GIN gives a modest improvement on 8D but not on 14D.}
+  \item \textbf{RI-GIN gives a modest improvement on 8D; LRF-GIN is a negative result.}
         On 8D features the RI backbone improves every HierGIN metric:
         accuracy $+$1.2\,pp, balanced accuracy $+$1.3\,pp, macro-F1 $+$0.2\,pp.
-        On 14D features, RI-GIN (0.793) \emph{underperforms} standard GIN (0.808) by $-$1.5\,pp.
-        The degradation is attributed to the smaller batch size (32 vs.\ 64) forced
-        by memory constraints of the 14D$+$RI edge MLP, which increases gradient noise.
-        The gain is small compared to RIConv2's advantage, consistent with
-        the finding that our RI-GIN uses single-scale kNN-6 edge invariants
-        while RIConv2 uses multi-scale ball-query groups
-        (Section~\ref{sec:discussion:riconv2}).
+        On 14D features, RI-GIN (0.793) \emph{underperforms} standard GIN (0.808) by $-$1.5\,pp,
+        attributed to forced batch size 32 (memory constraint), increasing gradient noise.
+        LRF-GIN --- which replaces the on-the-fly 5D RI scalars with precomputed
+        8D Local Reference Frame edge features (curvature-frame projections) ---
+        degrades macro-F1 to 0.766 ($-$3.4\,pp vs.\ RI-GIN, $-$3.2\,pp vs.\ standard GIN).
+        The LRF frame estimation via PCA is prone to instability on near-flat surface
+        regions (degenerate covariance eigenvalues), introducing noise that cannot be
+        corrected at training time since the features are fixed at dataset build time.
 
   \item \textbf{Scalar injection consistently hurts.}
         Injecting patch-mean raw scalars causes $-$1.8\,pp to $-$3.0\,pp

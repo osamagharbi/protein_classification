@@ -56,6 +56,10 @@ failures.
 The RI-GIN backbone gives a modest $+$0.2\,pp macro-F1 / $+$1.3\,pp balanced
 accuracy over standard GIN on 8D features, consistent with a representation
 regularisation effect rather than the large geometric gain seen in RIConv2.
+LRF-GIN --- replacing on-the-fly RI scalars with precomputed 8D curvature-frame
+edge features --- degrades macro-F1 by $-$3.4\,pp vs.\ RI-GIN.
+Precomputed LRF frames from PCA are unstable on near-flat surfaces and cannot be
+corrected at training time, confirming that on-the-fly invariant computation is preferable.
 
 \paragraph{Future work.}
 The highest-priority direction is replacing HierGIN's kNN-6 node stage with
