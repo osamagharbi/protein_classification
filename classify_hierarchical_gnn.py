@@ -21,9 +21,13 @@ Usage:
     --pool meanmax --readout max --batch-size 64 --device 0
 """
 from __future__ import annotations
-import argparse, os, json, math
+import sys, argparse, os, json, math
 from pathlib import Path
 from datetime import datetime
+
+# Force line-buffered output so log files update in real-time when redirected
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 import numpy as np
 import torch
