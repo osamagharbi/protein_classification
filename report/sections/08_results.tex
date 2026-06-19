@@ -19,7 +19,6 @@ classes for a fair comparison).
   \centering
   \caption{Test set performance --- all methods (88-class macro-F1 protocol).
            \textbf{Bold}: best value per metric column.
-           $\dagger$~RI-GIN 14D pending at time of writing.
            $\ddagger$~Injection runs use 14D (global norm) features.
            RIConv2 metrics recomputed from published prediction CSVs.}
   \label{tab:main_results}
@@ -49,7 +48,7 @@ classes for a fair comparison).
     \midrule
     \multicolumn{6}{l}{\textit{HierGIN --- rotation-invariant backbone (RI-GIN)}} \\
     \quad HierGIN 8D + RI-GIN         & all 8 features       & 0.865 & 0.813 & 0.800 & 0.863 \\
-    \quad HierGIN 14D + RI-GIN$\;\dagger$ & global norm      & \textit{---} & \textit{---} & \textit{pend.} & \textit{---} \\
+    \quad HierGIN 14D + RI-GIN         & global norm      & 0.860 & 0.807 & 0.793 & 0.852 \\
     \midrule
     \multicolumn{6}{l}{\textit{HierGIN --- patch-level scalar injection (negative results)$\;\ddagger$}} \\
     \quad + inject 2-feat             & Pot + NormPot        & ---   & ---   & 0.790 & ---   \\
@@ -90,9 +89,12 @@ classes for a fair comparison).
         vs.\ $+$11.8\,pp for HierGIN --- reflecting a qualitative difference
         in how well each architecture exploits geometric information.
 
-  \item \textbf{RI-GIN gives a consistent, modest improvement over standard GIN.}
+  \item \textbf{RI-GIN gives a modest improvement on 8D but not on 14D.}
         On 8D features the RI backbone improves every HierGIN metric:
         accuracy $+$1.2\,pp, balanced accuracy $+$1.3\,pp, macro-F1 $+$0.2\,pp.
+        On 14D features, RI-GIN (0.793) \emph{underperforms} standard GIN (0.808) by $-$1.5\,pp.
+        The degradation is attributed to the smaller batch size (32 vs.\ 64) forced
+        by memory constraints of the 14D$+$RI edge MLP, which increases gradient noise.
         The gain is small compared to RIConv2's advantage, consistent with
         the finding that our RI-GIN uses single-scale kNN-6 edge invariants
         while RIConv2 uses multi-scale ball-query groups

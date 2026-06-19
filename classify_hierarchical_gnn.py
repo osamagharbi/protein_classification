@@ -70,9 +70,12 @@ class HierPatchDataset(Dataset):
     """Loads (full mesh graph, patch graph, label) triples."""
 
     def __init__(self, graph_dir, assign_dir, split, label_dict, ssl_emb_dir=None,
-                 feature_mode="all", rwpe_dim: int = 0):
+                 feature_mode="all", rwpe_dim: int = 0,
+                 use_lrf_feat: bool = False, assign_dir2=None):
         self.gdir = resolve_split_dir(graph_dir, split)
         self.adir = resolve_split_dir(assign_dir, split)
+        self.use_lrf_feat = use_lrf_feat
+        self.adir2 = resolve_split_dir(assign_dir2, split) if assign_dir2 else None
         self.label_dict = label_dict
         self.feature_mode = feature_mode
         self.rwpe_dim = rwpe_dim
@@ -171,12 +174,44 @@ class HierPatchDataset(Dataset):
         g_node.ndata["attr"] = x
         g_node.ndata["pid"] = a["patch_ids"].long()
 
+        # Option 1: LRF edge features — set AFTER add_self_loop so shapes align.
+        # edge_index_mesh has no self-loops; add_self_loop appends N zero-feature edges.
+        if self.use_lrf_feat:
+            lrf = d.get("ri_lrf_feat")
+            if lrf is not None:
+                N = x.shape[0]
+                zeros = torch.zeros(N, 8, dtype=torch.float32)
+                g_node.edata["lrf_feat"] = torch.cat([lrf.float(), zeros], dim=0)
+            else:
+                E = g_node.num_edges()
+                g_node.edata["lrf_feat"] = torch.zeros(E, 8, dtype=torch.float32)
+
         P = int(a["num_patches"])
         pei = a["patch_edge_index"]
         g_patch = dgl.graph((pei[0], pei[1]), num_nodes=P)
         g_patch = g_patch.remove_self_loop().add_self_loop()
 
         label = torch.tensor(self.label_dict[gid], dtype=torch.long)
+
+        # Option 3: three-level hierarchy — load intermediate assignment
+        if self.adir2 is not None:
+            ap2 = self.adir2 / gp.name
+            a2 = torch.load(ap2, map_location="cpu", weights_only=False)
+            g_node.ndata["mid_pid"] = a2["patch_ids"].long()   # node → mid (k128)
+            M = int(a2["num_patches"])
+            mei = a2["patch_edge_index"]
+            g_mid = dgl.graph((mei[0], mei[1]), num_nodes=M)
+            g_mid = g_mid.remove_self_loop().add_self_loop()
+            # mid → final assignment: majority vote of final patch_ids over mid-patch nodes
+            mid_ids = a2["patch_ids"].long()    # [N] node → mid
+            fin_ids = a["patch_ids"].long()     # [N] node → final
+            mid_to_final = torch.zeros(M, dtype=torch.long)
+            for p in range(M):
+                mask = (mid_ids == p)
+                if mask.any():
+                    mid_to_final[p] = torch.mode(fin_ids[mask])[0]
+            return g_node, g_mid, g_patch, mid_to_final, label
+
         return g_node, g_patch, label
 
 
@@ -257,6 +292,23 @@ def collate(batch):
     bp = dgl.batch(gpatches)
     y = torch.stack(labels)
     return bn, bp, global_pid, y
+
+
+def collate_three(batch):
+    """Collate for three-level hierarchy: returns (bn, bm, bp, mid_gpid, gpid, y)."""
+    gnodes, gmids, gpatches, m2fs, labels = zip(*batch)
+    mid_counts = [gm.num_nodes() for gm in gmids]
+    mid_offsets = np.cumsum([0] + mid_counts[:-1])
+    fin_counts = [gp.num_nodes() for gp in gpatches]
+    fin_offsets = np.cumsum([0] + fin_counts[:-1])
+    node_mid_pids, mid_fin_pids = [], []
+    for gn, m_off in zip(gnodes, mid_offsets):
+        node_mid_pids.append(gn.ndata["mid_pid"] + int(m_off))
+    for m2f, f_off in zip(m2fs, fin_offsets):
+        mid_fin_pids.append(m2f + int(f_off))
+    return (dgl.batch(gnodes), dgl.batch(gmids), dgl.batch(gpatches),
+            torch.cat(node_mid_pids, dim=0), torch.cat(mid_fin_pids, dim=0),
+            torch.stack(labels))
 
 
 # --------------------------------------------------------------------------- #
@@ -423,6 +475,73 @@ class GPSLayer(nn.Module):
         return h_out
 
 
+class LRFConvLayer(nn.Module):
+    """GNN layer using precomputed 8D LRF edge features (ri_lrf_feat key in graph).
+
+    Requires dataset built with add_lrf_features.py (ssl_graphs_1k_geom_enriched_ri).
+    Edge features [E, 8] must be stored in g.edata['lrf_feat'] by the dataloader.
+    """
+    def __init__(self, in_dim: int, out_dim: int):
+        super().__init__()
+        self.edge_mlp = nn.Sequential(
+            nn.Linear(in_dim + 8, out_dim),
+            nn.ReLU(),
+            nn.Linear(out_dim, out_dim),
+        )
+
+    def forward(self, g: dgl.DGLGraph, h: torch.Tensor) -> torch.Tensor:
+        with g.local_scope():
+            g.ndata["_h"] = h
+            g.apply_edges(self._msg)
+            g.update_all(dgl_fn.copy_e("_m", "_agg_m"), dgl_fn.sum("_agg_m", "_out"))
+            return g.ndata["_out"]
+
+    def _msg(self, edges) -> dict:
+        hi = edges.src["_h"]            # [E, in_dim]
+        ef = edges.data["lrf_feat"]     # [E, 8]
+        return {"_m": self.edge_mlp(torch.cat([hi, ef], dim=1))}
+
+
+class MSGINLayer(nn.Module):
+    """Multi-Scale GIN: aggregates node features at kNN-6/16/32 and concatenates.
+
+    Builds kNN graphs on-the-fly from node xyz positions (no extra data files).
+    Requires a feature mode that includes xyz (all, geom_14d_raw, coords_normals).
+    """
+    def __init__(self, in_dim: int, out_dim: int,
+                 ks=(6, 16, 32), xyz_slice: slice = slice(5, 8)):
+        super().__init__()
+        self.ks = list(ks)
+        self.xyz_slice = xyz_slice
+        self.mlps = nn.ModuleList([gin_mlp(in_dim, out_dim) for _ in ks])
+        self.out_proj = nn.Linear(out_dim * len(ks), out_dim)
+
+    def forward(self, g: dgl.DGLGraph, h: torch.Tensor) -> torch.Tensor:
+        pos = g.ndata["attr"][:, self.xyz_slice]  # [total_N, 3]
+        # Process each graph in the batch separately to avoid cross-graph distances
+        counts = g.batch_num_nodes()              # [B]
+        per_scale: list = [[] for _ in self.ks]
+        offset = 0
+        with torch.no_grad():
+            for n in counts:
+                n = n.item()
+                pi = pos[offset: offset + n]      # [n, 3]
+                D = torch.cdist(pi, pi)
+                D.fill_diagonal_(float("inf"))
+                hi = h[offset: offset + n]        # [n, d]
+                for ki, k in enumerate(self.ks):
+                    k_eff = min(k, n - 1)
+                    nbrs = D.topk(k_eff, dim=1, largest=False).indices  # [n, k]
+                    src = torch.arange(n, device=h.device).repeat_interleave(k_eff)
+                    dst = nbrs.reshape(-1)
+                    agg = hi.clone()              # self-term (ε=1)
+                    agg.index_add_(0, src, hi[dst])
+                    per_scale[ki].append(agg)
+                offset += n
+        out = [mlp(torch.cat(parts, dim=0)) for mlp, parts in zip(self.mlps, per_scale)]
+        return self.out_proj(torch.cat(out, dim=1))
+
+
 class RIConvLayer(nn.Module):
     """Rotation-invariant GNN layer (RIConv2-style).
 
@@ -483,9 +602,13 @@ class RIConvLayer(nn.Module):
         return {"_m": self.edge_mlp(torch.cat([hi, ri], dim=1))}
 
 
-def make_conv(backbone, in_dim, out_dim, pna_delta=6.0):
+def make_conv(backbone, in_dim, out_dim, pna_delta=6.0, xyz_slice=slice(5, 8)):
     if backbone == "gin":
         return GINConv(gin_mlp(in_dim, out_dim), "sum", learn_eps=True)
+    elif backbone == "lrf_gin":
+        return LRFConvLayer(in_dim, out_dim)
+    elif backbone == "msg_gin":
+        return MSGINLayer(in_dim, out_dim, xyz_slice=xyz_slice)
     elif backbone == "ri_gin":
         return RIConvLayer(in_dim, out_dim)
     elif backbone == "sage":
@@ -512,7 +635,8 @@ class HierarchicalGNN(nn.Module):
                  patch_layers=2, pool="meanmax", readout="max", dropout=0.3,
                  node_readout=False, node_backbone="gin", patch_backbone="gin",
                  pna_delta=6.0, scalar_inject=False, patch_scalar_inject=False,
-                 patch_inject_all=False):
+                 patch_inject_all=False, three_level=False, mid_layers=2,
+                 xyz_slice=slice(5, 8)):
         super().__init__()
         self.pool = pool
         self.readout = readout
@@ -521,6 +645,7 @@ class HierarchicalGNN(nn.Module):
         self.scalar_inject = scalar_inject
         self.patch_scalar_inject = patch_scalar_inject
         self.patch_inject_all = patch_inject_all
+        self.three_level = three_level
         self._in_dim = in_dim  # needed at forward time for patch_inject_all
 
         # node-level GNN on the full mesh (node_layers=0 bypasses entirely)
@@ -528,7 +653,7 @@ class HierarchicalGNN(nn.Module):
         self.node_norms = nn.ModuleList()
         d = in_dim
         for _ in range(node_layers):
-            self.node_convs.append(make_conv(node_backbone, d, hidden_dim, pna_delta))
+            self.node_convs.append(make_conv(node_backbone, d, hidden_dim, pna_delta, xyz_slice))
             self.node_norms.append(nn.LayerNorm(hidden_dim))
             d = hidden_dim
         # when node_layers=0, project raw features to hidden_dim for pooling
@@ -545,6 +670,15 @@ class HierarchicalGNN(nn.Module):
         # projection after node->patch pooling (meanmax doubles width)
         pooled_dim = hidden_dim * (2 if pool == "meanmax" else 1)
         self.pool_proj = nn.Linear(pooled_dim, hidden_dim) if pooled_dim != hidden_dim else nn.Identity()
+
+        # Option 3: three-level hierarchy — intermediate (mid) pooling stage
+        if three_level:
+            self.mid_pool_proj = nn.Linear(pooled_dim, hidden_dim) if pooled_dim != hidden_dim else nn.Identity()
+            self.mid_convs = nn.ModuleList()
+            self.mid_norms = nn.ModuleList()
+            for _ in range(mid_layers):
+                self.mid_convs.append(make_conv(patch_backbone, hidden_dim, hidden_dim, pna_delta))
+                self.mid_norms.append(nn.LayerNorm(hidden_dim))
 
         # patch-level GNN on the patch graph
         self.patch_convs = nn.ModuleList()
@@ -604,7 +738,13 @@ class HierarchicalGNN(nn.Module):
             return mx
         return torch.cat([mean, mx], dim=1)
 
-    def forward(self, bn, bp, gpid):
+    def forward(self, bn, bp, gpid, bm=None, mid_gpid=None):
+        """Forward pass.
+
+        Standard mode: forward(bn, bp, gpid)
+        Three-level:   forward(bn, bp, gpid, bm=mid_graph, mid_gpid=node_to_mid)
+          where gpid = mid_to_final assignment.
+        """
         h = bn.ndata["attr"]
         # cache the 2 scalar channels (Potential_norm, NormalPotential_norm) at
         # input resolution for re-injection between node layers
@@ -627,9 +767,27 @@ class HierarchicalGNN(nn.Module):
                         # reason about electrostatics at its own resolution
                         h = self.scalar_projs[i](torch.cat([h, scalars], dim=1))
 
-        P = bp.num_nodes()
-        ph = self._scatter(h, gpid, P)
-        ph = self.pool_proj(ph)
+        # Three-level path: pool nodes → mid-patches → final-patches
+        if self.three_level and bm is not None:
+            M = bm.num_nodes()
+            mh = self._scatter(h, mid_gpid, M)
+            mh = self.mid_pool_proj(mh)
+            m_len = len(self.mid_convs)
+            for i, (conv, norm) in enumerate(zip(self.mid_convs, self.mid_norms)):
+                mh_in = mh
+                mh = norm(conv(bm, mh))
+                if mh_in.shape[-1] == mh.shape[-1]:
+                    mh = mh + mh_in
+                if i < m_len - 1:
+                    mh = self.dropout(F.elu(mh))
+            # use mh as input to final pooling
+            P = bp.num_nodes()
+            ph = self._scatter(mh, gpid, P)
+            ph = self.pool_proj(ph)
+        else:
+            P = bp.num_nodes()
+            ph = self._scatter(h, gpid, P)
+            ph = self.pool_proj(ph)
 
         # compute patch-mean features for patch-level injection
         if self.patch_inject_all or self.patch_scalar_inject:
@@ -703,9 +861,16 @@ def run_epoch(model, loader, criterion, device, optimizer=None, num_classes=None
     total_loss, preds, labs = 0.0, [], []
     ctx = torch.enable_grad() if train else torch.no_grad()
     with ctx:
-        for bn, bp, gpid, y in tqdm(loader, desc=desc, leave=False):
-            bn = bn.to(device); bp = bp.to(device); gpid = gpid.to(device); y = y.to(device)
-            logits = model(bn, bp, gpid)
+        for batch in tqdm(loader, desc=desc, leave=False):
+            if len(batch) == 6:  # three-level: (bn, bm, bp, mid_gpid, gpid, y)
+                bn, bm, bp, mid_gpid, gpid, y = batch
+                bn = bn.to(device); bm = bm.to(device); bp = bp.to(device)
+                mid_gpid = mid_gpid.to(device); gpid = gpid.to(device); y = y.to(device)
+                logits = model(bn, bp, gpid, bm, mid_gpid)
+            else:
+                bn, bp, gpid, y = batch
+                bn = bn.to(device); bp = bp.to(device); gpid = gpid.to(device); y = y.to(device)
+                logits = model(bn, bp, gpid)
             loss = criterion(logits, y)
             if train:
                 optimizer.zero_grad(); loss.backward()
@@ -738,8 +903,11 @@ def main():
                          "it CUTS test macro-F1 from 0.22 to 0.045 (it shortcuts to majority classes "
                          "and drowns the patch path). Kept only for reproducibility of that negative result.")
     ap.add_argument("--node-backbone",
-                    choices=["gin", "sage", "gcn", "gat", "gatv2", "pna", "gt", "gps", "sgformer", "ri_gin"],
-                    default="gin", help="GNN backbone for the node-level encoder")
+                    choices=["gin", "sage", "gcn", "gat", "gatv2", "pna", "gt", "gps", "sgformer",
+                             "ri_gin", "lrf_gin", "msg_gin"],
+                    default="gin", help="GNN backbone for the node-level encoder. "
+                    "lrf_gin: uses precomputed 8D LRF edge features (requires ssl_graphs_1k_geom_enriched_ri). "
+                    "msg_gin: multi-scale kNN-6/16/32 aggregation (built on-the-fly from xyz).")
     ap.add_argument("--patch-backbone",
                     choices=["gin", "sage", "gcn", "gat", "gatv2", "pna", "gt", "gps", "sgformer"],
                     default="gin", help="GNN backbone for the patch-level encoder")
@@ -795,6 +963,11 @@ def main():
                     help="LR schedule: none (patience-based early stop) or cosine annealing")
     ap.add_argument("--warmup-epochs", type=int, default=5,
                     help="Linear LR warmup epochs (used with --lr-schedule cosine)")
+    ap.add_argument("--assign-dir2", default=None,
+                    help="Option 3 — three-level hierarchy: intermediate patch assignment dir "
+                    "(e.g. ssl_graphs_1k_patchassign_k128). --assign-dir becomes the FINAL level.")
+    ap.add_argument("--mid-layers", type=int, default=2,
+                    help="GIN layers in the intermediate (mid) pooling stage (three-level only).")
     ap.add_argument("--topk-classes", type=int, default=None)
     ap.add_argument("--device", type=int, default=0)
     ap.add_argument("--seed", type=int, default=42)
@@ -829,19 +1002,19 @@ def main():
     if args.topk_classes:
         num_classes = args.topk_classes
 
-    full_train = HierPatchDataset(args.graph_dir, args.assign_dir, "train", train_labels,
-                                  ssl_emb_dir=args.ssl_emb_dir, feature_mode=args.feature_mode,
-                                  rwpe_dim=args.rwpe_dim)
-    test_ds = HierPatchDataset(args.graph_dir, args.assign_dir, "test", test_labels,
-                               ssl_emb_dir=args.ssl_emb_dir, feature_mode=args.feature_mode,
-                               rwpe_dim=args.rwpe_dim)
+    use_lrf = (args.node_backbone == "lrf_gin")
+    three_level = (args.assign_dir2 is not None)
+    _ds_kw = dict(ssl_emb_dir=args.ssl_emb_dir, feature_mode=args.feature_mode,
+                  rwpe_dim=args.rwpe_dim, use_lrf_feat=use_lrf, assign_dir2=args.assign_dir2)
+    _col = collate_three if three_level else collate
+
+    full_train = HierPatchDataset(args.graph_dir, args.assign_dir, "train", train_labels, **_ds_kw)
+    test_ds = HierPatchDataset(args.graph_dir, args.assign_dir, "test", test_labels, **_ds_kw)
 
     if args.val_labels_csv:
         val_labels, _ = load_labels(args.graph_dir, "train", args.val_labels_csv)
         train_ds = full_train
-        val_ds = HierPatchDataset(args.graph_dir, args.assign_dir, "train", val_labels,
-                                  ssl_emb_dir=args.ssl_emb_dir, feature_mode=args.feature_mode,
-                                  rwpe_dim=args.rwpe_dim)
+        val_ds = HierPatchDataset(args.graph_dir, args.assign_dir, "train", val_labels, **_ds_kw)
         num_classes = len(set(train_labels.values()) | set(val_labels.values()))
     else:
         tr_idx, va_idx = create_robust_train_val_split(full_train, train_labels,
@@ -859,17 +1032,19 @@ def main():
         sampler = WeightedRandomSampler(torch.as_tensor(sw, dtype=torch.double),
                                         num_samples=len(sw), replacement=True)
         print(f"  WeightedRandomSampler: power={args.sampler_power}")
-        train_collate = collate_aug(args.aug_scale_std, args.aug_jitter_std, args.feature_mode) if args.augment else collate
+        train_collate = (collate_aug(args.aug_scale_std, args.aug_jitter_std, args.feature_mode)
+                         if args.augment and not three_level else _col)
         train_loader = DataLoader(train_ds, batch_size=args.batch_size, sampler=sampler,
                                   num_workers=args.num_workers, collate_fn=train_collate)
     else:
-        train_collate = collate_aug(args.aug_scale_std, args.aug_jitter_std, args.feature_mode) if args.augment else collate
+        train_collate = (collate_aug(args.aug_scale_std, args.aug_jitter_std, args.feature_mode)
+                         if args.augment and not three_level else _col)
         train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
                                   num_workers=args.num_workers, collate_fn=train_collate)
     val_loader  = DataLoader(val_ds,  batch_size=args.batch_size, shuffle=False,
-                             num_workers=args.num_workers, collate_fn=collate)
+                             num_workers=args.num_workers, collate_fn=_col)
     test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False,
-                             num_workers=args.num_workers, collate_fn=collate)
+                             num_workers=args.num_workers, collate_fn=_col)
 
     sample = full_train[0][0]
     in_dim = sample.ndata["attr"].shape[1]
@@ -886,6 +1061,11 @@ def main():
     elif pna_delta is None:
         pna_delta = 6.0
 
+    # xyz_slice: dims of xyz in the node feature vector (for msg_gin and ri_gin)
+    _xyz_sl = slice(5, 8)  # default for all/geom_14d_raw; coords_normals uses 0:3
+    if args.feature_mode in ("coords", "coords_normals", "coords_potential"):
+        _xyz_sl = slice(0, 3)
+
     model = HierarchicalGNN(in_dim, args.hidden_dim, num_classes, args.node_layers,
                             args.patch_layers, args.pool, args.readout, args.dropout,
                             node_readout=args.node_readout,
@@ -894,7 +1074,10 @@ def main():
                             pna_delta=pna_delta,
                             scalar_inject=args.scalar_inject,
                             patch_scalar_inject=args.patch_scalar_inject,
-                            patch_inject_all=args.patch_inject_all).to(device)
+                            patch_inject_all=args.patch_inject_all,
+                            three_level=three_level,
+                            mid_layers=args.mid_layers,
+                            xyz_slice=_xyz_sl).to(device)
     print(f"in_dim={in_dim} | node_backbone={args.node_backbone} | patch_backbone={args.patch_backbone}"
           f" | ssl={args.ssl_emb_dir is not None}"
           f" | params={sum(p.numel() for p in model.parameters()):,}")
