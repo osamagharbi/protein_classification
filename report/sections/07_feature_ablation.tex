@@ -261,8 +261,15 @@ The model is trained under two feature modes:
 (ii)~\textbf{14D (geom, global norm)} on the geometry-enriched dataset.
 
 \paragraph{Results.}
-Both runs are currently training.
-Table~\ref{tab:rigin} will be updated once training completes.
+The 8D RI-GIN run completed 80 epochs and outperforms the 8D standard GIN
+baseline on every metric: accuracy $+$1.2\,pp (0.865 vs.\ 0.853),
+macro-F1 $+$0.2\,pp (0.800 vs.\ 0.798), balanced accuracy $+$1.3\,pp
+(0.813 vs.\ 0.800), and weighted-F1 $+$1.0\,pp (0.863 vs.\ 0.853).
+The improvement is consistent but modest, suggesting that standard GIN can
+learn approximately rotation-invariant representations from a large enough
+training set, but hard-coding the invariance provides a reliable small gain.
+The 14D RI-GIN run is currently training (batch size 32 due to GPU memory
+constraints); results are pending.
 
 \begin{table}[h]
   \centering
@@ -274,7 +281,7 @@ Table~\ref{tab:rigin} will be updated once training completes.
     \textbf{Backbone} & \textbf{Features} & \textbf{Macro-F1} & \textbf{Bal.\ Acc.} \\
     \midrule
     GIN    & 8D (all)             & 0.798 & 0.800 \\
-    RI-GIN & 8D (all)             & \textit{pending} & \textit{pending} \\
+    RI-GIN & 8D (all)             & \textbf{0.800} & \textbf{0.813} \\
     \midrule
     GIN    & 14D (global norm)    & 0.808 & 0.812 \\
     RI-GIN & 14D (global norm)    & \textit{pending} & \textit{pending} \\
