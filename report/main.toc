@@ -1,0 +1,104 @@
+\contentsline {section}{\numberline {1}Introduction}{3}{section.1}%
+\contentsline {paragraph}{Why this problem is hard.}{3}{section*.2}%
+\contentsline {paragraph}{Contributions.}{3}{section*.3}%
+\contentsline {section}{\numberline {2}Dataset: SHREC\,25 Protein Surfaces}{4}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Overview}{4}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Class Imbalance}{4}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Per-mesh Features}{4}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}Hard and Confusable Class Pairs}{5}{subsection.2.4}%
+\contentsline {section}{\numberline {3}Data Pipeline: VTK Mesh to SSL Graph}{6}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Stage 1 --- SSL Graph Construction}{6}{subsection.3.1}%
+\contentsline {paragraph}{Farthest-point subsampling (FPS).}{6}{section*.6}%
+\contentsline {paragraph}{k-NN graph construction.}{6}{section*.7}%
+\contentsline {paragraph}{Feature extraction.}{6}{section*.8}%
+\contentsline {paragraph}{Output format.}{6}{section*.9}%
+\contentsline {subsection}{\numberline {3.2}Stage 2 --- Geodesic Patch Decomposition}{6}{subsection.3.2}%
+\contentsline {paragraph}{Patch seed selection.}{6}{section*.10}%
+\contentsline {paragraph}{Geodesic Voronoi assignment.}{6}{section*.11}%
+\contentsline {paragraph}{Patch meta-graph.}{6}{section*.12}%
+\contentsline {paragraph}{Output format.}{7}{section*.13}%
+\contentsline {subsection}{\numberline {3.3}Summary}{7}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Dataset Separability Analysis}{8}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Graph-level Separability (1k-node SSL Graphs)}{8}{subsection.4.1}%
+\contentsline {subsubsection}{\numberline {4.1.1}Sliced Wasserstein: Shape vs.\ Features vs.\ Joint}{8}{subsubsection.4.1.1}%
+\contentsline {subsubsection}{\numberline {4.1.2}Spatial Autocorrelation: Moran's I}{9}{subsubsection.4.1.2}%
+\contentsline {subsubsection}{\numberline {4.1.3}Patch-SVM vs.\ Global-SVM on Graphs}{9}{subsubsection.4.1.3}%
+\contentsline {subsection}{\numberline {4.2}Full-resolution Analysis (VTK Meshes)}{9}{subsection.4.2}%
+\contentsline {subsubsection}{\numberline {4.2.1}Vertex-level KS Test (All 8 Features)}{10}{subsubsection.4.2.1}%
+\contentsline {subsubsection}{\numberline {4.2.2}Sliced Wasserstein (VTK, All 5 Components)}{11}{subsubsection.4.2.2}%
+\contentsline {subsubsection}{\numberline {4.2.3}Protein-level SVM (Full-res VTK)}{11}{subsubsection.4.2.3}%
+\contentsline {subsection}{\numberline {4.3}Comparison: 1k Graph $\approx $ Full Resolution}{11}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Geometric Feature Analysis (21D Dataset)}{11}{subsection.4.4}%
+\contentsline {subsubsection}{\numberline {4.4.1}KS Test on Geometric Features}{12}{subsubsection.4.4.1}%
+\contentsline {subsubsection}{\numberline {4.4.2}Spatial Autocorrelation of Geometric Features}{12}{subsubsection.4.4.2}%
+\contentsline {subsubsection}{\numberline {4.4.3}Effect on Protein-level Classification}{13}{subsubsection.4.4.3}%
+\contentsline {subsubsection}{\numberline {4.4.4}HierGIN Training on 14D Geometric Features}{13}{subsubsection.4.4.4}%
+\contentsline {paragraph}{Normalization pitfall.}{13}{section*.26}%
+\contentsline {paragraph}{Global normalisation fix (\texttt {geom14d\_raw}).}{14}{section*.27}%
+\contentsline {paragraph}{Results.}{15}{section*.28}%
+\contentsline {subsection}{\numberline {4.5}Curvature Feature Analysis (12D Dataset)}{15}{subsection.4.5}%
+\contentsline {subsubsection}{\numberline {4.5.1}KS Test on Curvature Features}{15}{subsubsection.4.5.1}%
+\contentsline {subsubsection}{\numberline {4.5.2}Sliced Wasserstein on Curvature}{16}{subsubsection.4.5.2}%
+\contentsline {subsubsection}{\numberline {4.5.3}Spatial Autocorrelation of Curvature}{16}{subsubsection.4.5.3}%
+\contentsline {subsubsection}{\numberline {4.5.4}Effect on Protein-level Classification}{16}{subsubsection.4.5.4}%
+\contentsline {subsection}{\numberline {4.6}Summary}{16}{subsection.4.6}%
+\contentsline {section}{\numberline {5}Model Architectures}{18}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Flat GNN Baseline}{18}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Hierarchical GNN: HierGIN}{18}{subsection.5.2}%
+\contentsline {subsubsection}{\numberline {5.2.1}Node-level GIN}{18}{subsubsection.5.2.1}%
+\contentsline {subsubsection}{\numberline {5.2.2}Geodesic Voronoi Patch Pooling}{18}{subsubsection.5.2.2}%
+\contentsline {subsubsection}{\numberline {5.2.3}Patch-level GIN}{19}{subsubsection.5.2.3}%
+\contentsline {subsubsection}{\numberline {5.2.4}Readout and Classification}{19}{subsubsection.5.2.4}%
+\contentsline {subsection}{\numberline {5.3}Node Backbone Variants}{19}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Rotation-Invariant Node Backbone: RI-GIN}{20}{subsection.5.4}%
+\contentsline {paragraph}{Computational note.}{20}{section*.34}%
+\contentsline {subsection}{\numberline {5.5}VTK Mesh Visualisation}{20}{subsection.5.5}%
+\contentsline {section}{\numberline {6}Training Setup}{21}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Cosine Annealing with Warmup}{21}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Class Weighting}{22}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Early Stopping}{22}{subsection.6.3}%
+\contentsline {subsection}{\numberline {6.4}Validation Split}{23}{subsection.6.4}%
+\contentsline {section}{\numberline {7}Ablation Studies}{24}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Feature Mode Ablation}{24}{subsection.7.1}%
+\contentsline {paragraph}{Findings.}{24}{section*.40}%
+\contentsline {subsection}{\numberline {7.2}Patch Count Ablation}{25}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Hidden Dimension}{26}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}Node GIN Depth}{26}{subsection.7.4}%
+\contentsline {subsection}{\numberline {7.5}LR Schedule}{26}{subsection.7.5}%
+\contentsline {subsection}{\numberline {7.6}Random Walk Positional Encoding}{27}{subsection.7.6}%
+\contentsline {subsection}{\numberline {7.7}Patch-level Scalar Re-injection}{27}{subsection.7.7}%
+\contentsline {paragraph}{Motivation.}{27}{section*.45}%
+\contentsline {paragraph}{Experiments.}{27}{section*.46}%
+\contentsline {paragraph}{Findings.}{27}{section*.47}%
+\contentsline {subsection}{\numberline {7.8}Rotation-Invariant Node Backbone (RI-GIN)}{28}{subsection.7.8}%
+\contentsline {paragraph}{Motivation.}{28}{section*.48}%
+\contentsline {paragraph}{Implementation.}{28}{section*.49}%
+\contentsline {paragraph}{Results.}{28}{section*.50}%
+\contentsline {paragraph}{Memory constraint.}{28}{section*.52}%
+\contentsline {section}{\numberline {8}Results and Comparison}{29}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Main Results Table}{29}{subsection.8.1}%
+\contentsline {paragraph}{Key observations.}{29}{section*.54}%
+\contentsline {subsection}{\numberline {8.2}Backbone Comparison}{30}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}Per-class Analysis}{30}{subsection.8.3}%
+\contentsline {subsection}{\numberline {8.4}Evaluation Protocol}{30}{subsection.8.4}%
+\contentsline {paragraph}{The 88-class vs.\ 99-class problem.}{30}{section*.56}%
+\contentsline {paragraph}{How we address it.}{31}{section*.57}%
+\contentsline {paragraph}{Why this matters for the geom14d\_raw comparison.}{31}{section*.58}%
+\contentsline {section}{\numberline {9}Analysis and Discussion}{32}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Persistent Confusion Across Models}{32}{subsection.9.1}%
+\contentsline {subsection}{\numberline {9.2}Feature Role Summary}{32}{subsection.9.2}%
+\contentsline {subsection}{\numberline {9.3}Hierarchical vs.\ Flat GNN}{32}{subsection.9.3}%
+\contentsline {paragraph}{Spatial hierarchy.}{33}{section*.60}%
+\contentsline {paragraph}{Information bottleneck.}{33}{section*.61}%
+\contentsline {subsection}{\numberline {9.4}Why Point-cloud Methods Underperform}{33}{subsection.9.4}%
+\contentsline {subsection}{\numberline {9.5}What Could Push Beyond the Ceiling}{33}{subsection.9.5}%
+\contentsline {subsection}{\numberline {9.6}Limitations}{33}{subsection.9.6}%
+\contentsline {section}{\numberline {10}Conclusion}{35}{section.10}%
+\contentsline {paragraph}{Pipeline.}{35}{section*.62}%
+\contentsline {paragraph}{Architecture.}{35}{section*.63}%
+\contentsline {paragraph}{Electrostatic potential is the key signal.}{35}{section*.64}%
+\contentsline {paragraph}{Dataset ceiling.}{35}{section*.65}%
+\contentsline {paragraph}{State of the art.}{35}{section*.66}%
+\contentsline {paragraph}{Enriched feature datasets.}{35}{section*.67}%
+\contentsline {paragraph}{Negative results.}{35}{section*.68}%
+\contentsline {paragraph}{Future work.}{35}{section*.69}%

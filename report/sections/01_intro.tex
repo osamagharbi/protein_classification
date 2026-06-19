@@ -1,0 +1,73 @@
+% ─────────────────────────────────────────────────────────────────
+\section{Introduction}
+\label{sec:intro}
+% ─────────────────────────────────────────────────────────────────
+
+Protein fold classification is a central problem in structural bioinformatics.
+The three-dimensional surface shape of a protein, together with its
+electrostatic potential field, encodes information about its biochemical
+function and evolutionary family.
+The SHREC\,25 Shape Retrieval Contest~\cite{shrec25} provides a benchmark that
+casts fold recognition as a closed-world, 99-class classification task on
+protein surface meshes, with a strongly class-imbalanced training set of
+9\,244 proteins.
+
+\paragraph{Why this problem is hard.}
+Three structural challenges make SHREC\,25 particularly demanding:
+\begin{enumerate}
+  \item \textbf{Class imbalance.}
+        The most frequent class (class\,8) has 2\,054 training examples while
+        the rarest class has only 2 --- a 1\,027$\times$ ratio.
+        Nine classes have zero test proteins; evaluating macro-averaged F1 over
+        88 testable classes directly penalises poor recall on rare classes.
+
+  \item \textbf{Near-inseparable class pairs.}
+        Several protein families share highly similar surface geometry and
+        electrostatics.
+        The pair (class\,61, class\,90), for instance, cannot be reliably
+        separated even with full-resolution VTK meshes and protein-level
+        support-vector-machine classifiers (balanced accuracy $\approx 0.56$,
+        barely above chance).
+
+  \item \textbf{Surface-only feature budget.}
+        The dataset provides only vertex positions, surface normals, and two
+        scalar fields --- electrostatic potential (\textit{Potential}) and
+        normal component of potential (\textit{NormalPotential}).
+        Sequence information, volumetric electron density, and other richer
+        representations are absent.
+\end{enumerate}
+
+\paragraph{Contributions.}
+This report documents a complete end-to-end study with the following
+contributions:
+\begin{itemize}
+  \item A preprocessing pipeline that converts VTK surface meshes into
+        graph-learning-ready SSL graphs via farthest-point subsampling and
+        k-nearest-neighbour edge construction
+        (Section~\ref{sec:pipeline}).
+
+  \item A statistical separability analysis at vertex level (Kolmogorov--Smirnov,
+        Sliced Wasserstein), protein level (SVM on global statistics), and
+        spatial level (Moran's~I autocorrelation) to characterise which
+        features actually discriminate between classes
+        (Section~\ref{sec:analysis}).
+
+  \item A hierarchical graph neural network (\textit{HierGIN}) that stacks a
+        node-level GIN over the 1\,000-node surface graph, a geodesic Voronoi
+        patch pooling layer, and a patch-level GIN before global readout and
+        classification (Section~\ref{sec:arch}).
+
+  \item Systematic ablation of eight node-backbone types, five feature
+        configurations, patch counts, hidden dimensions, and training
+        regularisation choices (Section~\ref{sec:ablation}).
+
+  \item A comparison with external methods (PointMamba~\cite{pointmamba},
+        Mamba3D~\cite{mamba3d}) submitted to the SHREC\,25 contest, and an
+        analysis of the theoretical performance ceiling imposed by the dataset
+        structure (Section~\ref{sec:results}).
+\end{itemize}
+
+Our best model, \textbf{HierGIN-8D}, achieves a macro-F1 of \textbf{0.7983}
+on 88 evaluated test classes, surpassing flat-GNN baselines by $+$15.8\,pp,
+while the fundamental confusion between class pairs (61,\,90) and (70,\,56)
+persists across all models and feature configurations tested.

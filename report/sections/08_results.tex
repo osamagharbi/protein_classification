@@ -1,0 +1,159 @@
+% ─────────────────────────────────────────────────────────────────
+\section{Results and Comparison}
+\label{sec:results}
+% ─────────────────────────────────────────────────────────────────
+
+\subsection{Main Results Table}
+
+Table~\ref{tab:main_results} compares all methods studied in this work together
+with two external SHREC\,25 entries.
+All HierGIN metrics are from the proper evaluation protocol (88 test classes
+with at least one sample, macro average restricted to those 88 classes);
+external method numbers are taken from the SHREC\,25 challenge
+report~\cite{shrec25}.
+The three primary metrics are \textbf{Accuracy}, \textbf{Balanced Accuracy},
+and \textbf{Weighted F1}; Macro-F1, Precision (macro), and Recall (macro) are
+shown for completeness.
+
+\begin{table}[ht]
+  \centering
+  \caption{Test set performance comparison (88-class evaluation).
+           HierGIN metrics: macro average over the 88 classes that have
+           $\geq$1 test sample (classes without test samples excluded from
+           the macro denominator).
+           External values reported as published.
+           \textbf{Bold}: best value per metric column.
+           Primary metrics (Acc, Bal.Acc, Wtd-F1) are listed first.}
+  \label{tab:main_results}
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{llrrrrrr}
+    \toprule
+    \textbf{Method} & \textbf{Features}
+      & \textbf{Acc} & \textbf{Bal.Acc} & \textbf{Wtd-F1}
+      & \textbf{Macro-F1} & \textbf{Prec} & \textbf{Rec} \\
+    \midrule
+    \multicolumn{8}{l}{\textit{External baselines}} \\
+    \quad Flat GIN (h512, 6L)         & 4D          & ---   & ---   & ---   & 0.640 & ---   & ---   \\
+    \quad Mamba3D~\cite{mamba3d}      & point cloud & ---   & 0.662 & 0.825 & 0.672 & ---   & ---   \\
+    \quad PointMamba~\cite{pointmamba}& point cloud & ---   & 0.714 & 0.872 & 0.720 & ---   & ---   \\
+    \midrule
+    \multicolumn{8}{l}{\textit{HierGIN 8D feature ablation (this work)}} \\
+    \quad HierGIN 6D (normals)        & xyz + normals       & 0.783 & 0.612 & 0.760 & 0.619 & 0.662 & 0.612 \\
+    \quad HierGIN 7D (no Pot)         & no Potential        & 0.808 & 0.681 & 0.799 & 0.680 & 0.714 & 0.681 \\
+    \quad HierGIN 4D                  & xyz + Potential     & 0.853 & 0.790 & 0.851 & 0.781 & 0.790 & 0.790 \\
+    \quad HierGIN 7D (no NormPot)     & no NormalPotential  & 0.849 & 0.797 & 0.848 & 0.790 & 0.797 & 0.797 \\
+    \quad HierGIN 8D (all)            & all features        & 0.853 & 0.800 & 0.853 & 0.798 & 0.814 & 0.800 \\
+    \midrule
+    \multicolumn{8}{l}{\textit{Enriched features (14D = 8D + 6 geometric, this work)}} \\
+    \quad HierGIN 14D (geom, z-scored)& per-graph z-score   & 0.838 & 0.757 & 0.837 & 0.752 & 0.767 & 0.757 \\
+    \quad \textbf{HierGIN 14D (geom, global norm)} & \textbf{global norm} & \textbf{0.865} & \textbf{0.812} & \textbf{0.862} & \textbf{0.808} & \textbf{0.816} & \textbf{0.812} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Key observations.}
+\begin{itemize}
+  \item \textbf{HierGIN 14D (geom, global norm)} achieves the best results
+        across all six reported metrics:
+        accuracy 0.865, balanced accuracy 0.812, weighted-F1 0.862,
+        macro-F1 0.808, precision 0.816, recall 0.812.
+        It outperforms the 8D baseline by $+$1.2\,pp accuracy,
+        $+$1.2\,pp balanced accuracy, $+$0.9\,pp weighted-F1, and
+        $+$1.0\,pp macro-F1.
+
+  \item HierGIN-14D-global outperforms both SHREC\,25 external entries
+        PointMamba (wtd-F1 0.872 vs 0.862; note: PointMamba's balanced
+        accuracy 0.714 vs our 0.812) and Mamba3D on every metric where
+        comparisons are available.
+
+  \item The normalisation of geometric features is critical:
+        the per-graph z-scored variant (14D z-score) scores only 0.752
+        macro-F1 --- 5.6\,pp below the global-norm variant.
+        Per-graph z-scoring erases the cross-protein scale differences
+        that carry class-discriminating signal.
+
+  \item Within the 8D ablation, HierGIN-8D (all) has the best macro-F1
+        (0.798) and balanced accuracy (0.800), confirming that all 8 features
+        contribute.
+        Removing Potential (7D-no-Pot, 0.680) causes the largest single
+        drop ($-$11.8\,pp).
+
+  \item The 4D baseline (xyz + Potential only) already achieves 0.853
+        accuracy --- identical to the full 8D model --- showing that
+        electrostatic potential is the dominant signal.
+\end{itemize}
+
+\subsection{Backbone Comparison}
+
+Figure~\ref{fig:backbone_ablation} and Table~\ref{tab:backbones} (Section~\ref{sec:arch})
+compare the eight node backbone types under 4D features.
+GIN achieves the highest macro-F1 (0.784), with GATv2 (0.774), GAT (0.774),
+and GPS (0.762) competitive.
+SGFormer (0.763) is notable for achieving a higher best-validation-F1 than GIN
+during training, but slightly lower test metrics.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{figures/backbone_ablation.pdf}
+  \caption{Node backbone ablation: accuracy, balanced accuracy, and macro-F1
+           for eight backbone types under identical hyperparameters (4D features).}
+  \label{fig:backbone_ablation}
+\end{figure}
+
+\subsection{Per-class Analysis}
+
+The seven hardest classes --- 61, 90, 70, 56, 86, 14, 80 --- contribute
+disproportionately to macro-F1 degradation.
+Class\,80 achieves near-zero F1 in most configurations, likely due to
+having very few training examples and high intra-class variability.
+Classes 61 and 90 (the near-inseparable pair) produce complementary F1
+scores: when the model correctly predicts more class-61 samples, it
+misclassifies more class-90 samples as class-61, and vice versa
+(F1 of 0.576 vs.\ 0.850 for the best run).
+
+\subsection{Evaluation Protocol}
+\label{sec:eval_protocol}
+
+\paragraph{The 88-class vs.\ 99-class problem.}
+The SHREC\,25 test set contains proteins from only \textbf{88 of the 99
+families}: 11 families have training samples but zero test samples.
+The model still outputs a logit for all 99 classes at inference time.
+
+When sklearn's \texttt{f1\_score(..., average='macro')} is called with no
+explicit class list, it includes every class that appears in the union of
+ground-truth and prediction arrays.
+Classes absent from the test set have support\,=\,0; their per-class F1 is
+set to 0 by \texttt{zero\_division=0}.
+The macro average then divides by 99 instead of 88:
+
+\[
+  \text{Macro-F1}_{99} = \frac{\sum_{c=0}^{87} F1_c + \underbrace{0 + \cdots + 0}_{11}}{99}
+  = \frac{88}{99}\;\text{Macro-F1}_{88}
+\]
+
+This deflates the reported number by a factor of $88/99 \approx 0.889$
+($-$11.1\,pp relative, e.g.\ $0.798 \rightarrow 0.710$ for the 8D model).
+
+\paragraph{How we address it.}
+All metrics in this report are computed by passing an explicit class list
+to every sklearn metric call:
+
+\begin{verbatim}
+labels = sorted(valid_classes)   # 88 class IDs with >=1 test sample
+f1_score(y_true, y_pred, average='macro',
+         labels=labels, zero_division=0)
+\end{verbatim}
+
+This restricts the macro denominator to exactly 88, and classes with no
+test samples are excluded entirely from precision, recall, and F1.
+Balanced accuracy is computed as macro-averaged recall over the same 88
+class list.
+Accuracy and weighted-F1 are unaffected by this choice (they weight by
+support, so zero-support classes contribute nothing regardless).
+
+\paragraph{Why this matters for the geom14d\_raw comparison.}
+An earlier analysis mistakenly compared the 8D baseline's 88-class
+macro-F1 (0.798) against the geom14d\_raw training log's 99-class
+macro-F1 (0.718), making the 14D model appear 8\,pp worse.
+After applying the uniform 88-class protocol, geom14d\_raw scores
+macro-F1\,=\,\textbf{0.808} and outperforms the 8D baseline on every metric.

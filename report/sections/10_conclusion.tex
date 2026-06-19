@@ -1,0 +1,76 @@
+% ─────────────────────────────────────────────────────────────────
+\section{Conclusion}
+\label{sec:conclusion}
+% ─────────────────────────────────────────────────────────────────
+
+We presented a comprehensive study of protein family classification on the
+SHREC\,25 benchmark, spanning the full arc from VTK mesh preprocessing to
+hierarchical graph neural network training and detailed post-hoc analysis.
+
+\paragraph{Pipeline.}
+A two-stage pipeline converts raw VTK surface meshes into compact SSL graphs
+(1\,000 nodes, 8D features) and then into geodesic Voronoi patch assignments
+(64 patches), with all preprocessing implemented in pure Python and
+parallelisable across all available CPU cores.
+
+\paragraph{Architecture.}
+The HierGIN model stacks node-level GIN message passing, attention-weighted
+Voronoi patch pooling, patch-level GIN, and global max readout.
+The two-level pooling hierarchy is the principal driver of the $+$15.8\,pp
+improvement over flat GNN baselines.
+
+\paragraph{Electrostatic potential is the key signal.}
+Ablation experiments confirm that removing electrostatic potential degrades
+macro-F1 by 11.8\,pp --- the largest single-feature impact observed.
+NormalPotential adds a secondary gain, particularly for the hardest class
+pairs.
+Surface normals contribute a structural channel that improves recall on
+geometrically distinct families.
+
+\paragraph{Dataset ceiling.}
+The pair (61,\,90) is near-inseparable under all current surface features
+(SVM balanced accuracy 0.56, SW(Potential) = 0.088).
+We estimate the ceiling with these features at macro-F1 $\approx$0.85--0.88;
+our best model at 0.808 is within 4--7\,pp of this ceiling.
+Closing the remaining gap requires sequence-level or volumetric information.
+
+\paragraph{State of the art.}
+HierGIN-14D (global norm) achieves macro-F1 $=$ \textbf{0.808}, accuracy
+$=$ \textbf{0.865}, and balanced accuracy $=$ \textbf{0.812}, outperforming
+both SHREC\,25 entries PointMamba (0.720) and Mamba3D (0.672).
+The surface-topology-aware graph construction, combined with electrostatic
+and geometric features with correct global normalisation, gives a structural
+advantage over general point-cloud methods.
+
+\paragraph{Enriched feature datasets.}
+The 12D curvature-enriched dataset adds no separability beyond the 8D baseline
+($\Delta\text{SVM} \leq +0.020$).
+The 21D geometric-enriched dataset gains $+$0.085 SVM balanced accuracy for the
+near-inseparable (61,\,90) pair.
+Training HierGIN on a 14D subset (8D $+$ 6 geometric) with \emph{global}
+normalisation (not per-protein z-scoring) achieves the best overall results:
+accuracy 0.865, balanced accuracy 0.812, weighted-F1 0.862, macro-F1
+\textbf{0.808}, outperforming the 8D baseline across all six metrics and
+establishing a new state of the art on SHREC\,25.
+The normalisation scheme is critical: per-protein z-scoring erases
+cross-protein scale differences and degrades macro-F1 to 0.752.
+
+\paragraph{Negative results.}
+Two directions that did \emph{not} improve performance are worth recording.
+Patch-level scalar re-injection --- feeding patch-mean raw electrostatic
+values back between the two patch GNN layers --- consistently hurt performance
+($-$1.8\,pp to $-$3.0\,pp macro-F1), ruling out ``signal loss through
+pooling'' as an explanation for the remaining gap.
+The failure is informative: the attention pooling already encodes the
+relevant electrostatic information; explicit re-injection is redundant and
+disrupts the learned representations.
+
+\paragraph{Future work.}
+Ongoing experiments evaluate a rotation-invariant node backbone (RI-GIN)
+that encodes each edge message as a set of SO(3)-invariant scalars, removing
+the dependence on global orientation.
+Beyond this, promising directions include reducing the train-val overfitting
+gap in the 14D model via regularisation or augmentation, contrastive
+pre-training on full-resolution meshes, integration of protein language model
+embeddings (e.g.\ ESM-2), and ensemble approaches that flag the
+near-inseparable (61,\,90) pair for human review.

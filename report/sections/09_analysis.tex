@@ -1,0 +1,135 @@
+% ─────────────────────────────────────────────────────────────────
+\section{Analysis and Discussion}
+\label{sec:discussion}
+% ─────────────────────────────────────────────────────────────────
+
+\subsection{Persistent Confusion Across Models}
+
+The class pairs (61,\,90) and (70,\,56) generate incorrect predictions in
+\textit{every} model and feature configuration we tested, including both
+SHREC\,25 external entries (Mamba3D, PointMamba).
+This is not a model-specific artefact but a property of the data:
+the surface electrostatic features encoded in the VTK files do not contain
+enough information to reliably separate these families.
+
+The statistical evidence is unambiguous:
+\begin{itemize}
+  \item KS(Potential) for (61,\,90) = 0.031 — barely different marginal
+        distributions.
+  \item SW(Potential) for (61,\,90) = 0.088 — far below all control pairs
+        (0.36--0.72).
+  \item SVM balanced accuracy (full-res VTK, 30D stats) = 0.563 — 6\% above
+        chance.
+\end{itemize}
+
+Given these findings, we estimate the \textbf{theoretical macro-F1 ceiling}
+at approximately \textbf{0.85--0.88} with the current surface feature set,
+achievable by a perfect classifier on all other classes but still limited to
+$\approx$0.6 F1 on the (61,\,90) pair.
+
+\subsection{Feature Role Summary}
+
+Table~\ref{tab:feature_roles} synthesises the role of each feature group as
+determined by the ablation and separability analyses.
+
+\begin{table}[h]
+  \centering
+  \caption{Feature group roles derived from ablation and separability analysis.}
+  \label{tab:feature_roles}
+  \begin{tabular}{lp{3cm}p{6.5cm}}
+    \toprule
+    \textbf{Feature} & \textbf{Ablation impact} & \textbf{Interpretation} \\
+    \midrule
+    Potential & $-$11.8\,pp macro-F1 if removed & Dominant discriminating signal;
+      encodes family-specific charge distribution; KS / SW confirm large
+      distributional differences for most pairs. \\[4pt]
+    NormalPotential & $-$0.9\,pp overall;
+      $-$14\,pp for cls\,61 & Secondary signal; critical for the near-inseparable
+      (61,\,90) pair specifically; NormPot is spatially noisy ($I \approx 0.07$)
+      but provides complementary charge gradient information. \\[4pt]
+    Normals & $-$3.2\,pp (4D $\to$ 8D with normals) & Structural information
+      independent of electrostatics; most useful for classes whose confusion
+      is partially geometric (e.g., cls\,70,\,86). \\[4pt]
+    Coordinates & Necessary context & Without spatial context the GNN cannot
+      aggregate features correctly; coordinates alone (no potential) give
+      balanced accuracy $\approx 0.55$. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Hierarchical vs.\ Flat GNN}
+
+The hierarchical two-level pooling consistently outperforms a flat 6-layer GIN
+by $+$15.8\,pp macro-F1 (0.798 vs.\ 0.640).
+We attribute this gap to two factors:
+
+\paragraph{Spatial hierarchy.}
+The Voronoi patch pooling creates a mid-scale representation that captures
+local surface regions (e.g., a charged patch, a concave groove) as single
+patch nodes.
+The patch-level GIN can then reason about the spatial arrangement of these
+regions, a capability absent in a flat single-level GNN with global pooling.
+
+\paragraph{Information bottleneck.}
+Compressing 1\,000 nodes to 64 patches before global readout acts as a
+structured pooling bottleneck, reducing the variance of the graph embedding
+and improving generalisation under the heavy class imbalance.
+
+\subsection{Why Point-cloud Methods Underperform}
+
+Mamba3D (0.672) and PointMamba (0.720) process the protein as a 3D point cloud.
+While they benefit from expressive architectures (state-space models, Mamba
+blocks), they are not specifically adapted to surface mesh topology.
+Our VTK-to-graph pipeline explicitly preserves the surface connectivity
+structure, allowing the GNN to exploit proximity along the protein surface
+(geodesic distance) rather than Euclidean distance through protein interior.
+This surface-aware graph construction appears to be the key advantage of our
+approach.
+
+\subsection{What Could Push Beyond the Ceiling}
+
+Based on the analysis, further improvements would require data beyond the
+current VTK surface features:
+\begin{itemize}
+  \item \textbf{Sequence features}: amino acid sequence-level embeddings (e.g.,
+        from ESM-2~\cite{esm2}) would add fold-family information not reflected
+        in the surface alone.
+  \item \textbf{Geometric features with reduced overfitting}: the 14D GNN
+        with global-normalised geometric features already outperforms the 8D
+        baseline on all metrics (macro-F1 $+$1.0\,pp, balanced accuracy
+        $+$1.2\,pp).
+        However, the train-val F1 gap of 29\,pp indicates substantial
+        overfitting; stronger regularisation (dropout tuning, weight decay,
+        mixup, or protein-surface augmentation) could close this gap and
+        yield further improvement.
+  \item \textbf{Rotation-invariant message passing}: the RI-GIN backbone
+        (Section~\ref{sec:arch:rigin}) removes the dependence on the global
+        orientation frame by encoding messages as SO(3)-invariant scalars.
+        Whether this yields measurable improvement over the orientation-agnostic
+        representations learned by standard GIN is under evaluation
+        (Section~\ref{sec:ablation:rigin}).
+  \item \textbf{Volumetric representation}: full 3D electron density from
+        the protein interior (surface geometric curvature alone has been
+        tested and adds little --- Section~\ref{sec:analysis:curvature}).
+  \item \textbf{Ensemble methods}: disagreement between surface and
+        sequence-based predictors could flag hard cases for abstention or
+        ensemble averaging.
+  \item \textbf{Contrastive pre-training}: self-supervised pre-training
+        on the full VTK mesh (all vertices, not just 1\,000) with a
+        contrastive objective could learn richer representations.
+\end{itemize}
+
+\subsection{Limitations}
+
+\begin{itemize}
+  \item Our analysis uses a fixed FPS seed; results may vary slightly with
+        different subsampling seeds, especially for very small proteins.
+  \item The PNA backbone could not be evaluated with the proper inference
+        protocol due to a missing training-time delta parameter; its test
+        metrics are a lower bound.
+  \item The VTK mesh showcase (Figure~\ref{fig:vtk}) uses 3D matplotlib
+        rendering with triangle subsampling for visual clarity; the actual
+        mesh is finer.
+  \item We evaluate on the SHREC\,25 train/test split; cross-dataset
+        generalisation to other protein family benchmarks is not assessed.
+\end{itemize}

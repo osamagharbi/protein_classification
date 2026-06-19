@@ -39,6 +39,50 @@ from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, p
 
 import dgl
 from dgl.nn.pytorch import GATConv, GraphConv, GINConv, SAGEConv
+
+
+class SGFormerFlatLayer(nn.Module):
+    """SGFormer layer for flat graph classification.
+    O(N) linearized global attention + local GIN, combined with alpha mixing.
+    Ported from Wu et al. 2023 (https://github.com/qitianwu/SGFormer).
+    No torch_sparse dependency — pure PyTorch einsum.
+    """
+    def __init__(self, in_dim, out_dim, num_heads=4, alpha=0.5):
+        super().__init__()
+        assert out_dim % num_heads == 0
+        self.H, self.D = num_heads, out_dim // num_heads
+        self.Wq = nn.Linear(in_dim, out_dim)
+        self.Wk = nn.Linear(in_dim, out_dim)
+        self.Wv = nn.Linear(in_dim, out_dim)
+        self.out_proj = nn.Linear(self.D, out_dim)
+        gin_mlp = nn.Sequential(nn.Linear(in_dim, out_dim), nn.ReLU(),
+                                nn.Linear(out_dim, out_dim))
+        self.local_conv = GINConv(gin_mlp, "sum", learn_eps=True)
+        self.alpha = alpha
+
+    def forward(self, g, h):
+        N = h.shape[0]
+        q = self.Wq(h).view(N, self.H, self.D)
+        k = self.Wk(h).view(N, self.H, self.D)
+        v = self.Wv(h).view(N, self.H, self.D)
+        q = q / q.norm(p=2, dim=-1, keepdim=True).clamp(min=1e-8)
+        k = k / k.norm(p=2, dim=-1, keepdim=True).clamp(min=1e-8)
+
+        out = torch.zeros(N, self.H, self.D, device=h.device, dtype=h.dtype)
+        offset = 0
+        for n in g.batch_num_nodes().tolist():
+            qi, ki, vi = q[offset:offset+n], k[offset:offset+n], v[offset:offset+n]
+            kvs  = torch.einsum("nhm,nhd->hmd", ki, vi)
+            num  = torch.einsum("nhm,hmd->nhd", qi, kvs) + n * vi
+            denom = (torch.einsum("nhm,hm->nh", qi, ki.sum(0)) + n).unsqueeze(-1)
+            out[offset:offset+n] = num / denom.clamp(min=1e-8)
+            offset += n
+
+        x_global = self.out_proj(out.mean(dim=1))
+        x_local  = self.local_conv(g, h)
+        return self.alpha * x_local + (1 - self.alpha) * x_global
+
+
 from dataset_split_guard import resolve_dataset_local_split_csvs
 from gvp_dgl import DGLGVPEncoder
 from shrec25_loader import SHREC25SplitDataset, infer_feature_order
@@ -187,10 +231,16 @@ def resolve_graph_file(split_dir, graph_name):
     return split_dir / f"{graph_name}.bin"
 
 
+import re as _re
+_PATCHGRAPH_SUFFIX_RE = _re.compile(r'_patchgraph_k\d+_graph_label_\d+$')
+
 def canonical_graph_id(graph_id: str) -> str:
     """Normalize graph ids across variants (e.g., *_graph reduced format)."""
     gid = str(graph_id)
-    return gid[:-6] if gid.endswith('_graph') else gid
+    if gid.endswith('_graph'):
+        gid = gid[:-6]
+    gid = _PATCHGRAPH_SUFFIX_RE.sub('', gid)
+    return gid
 
 
 def load_graph_file(graph_file):
@@ -637,6 +687,22 @@ class GNNClassifier(nn.Module):
                 self.convs.append(SAGEConv(hidden_dim, hidden_dim, aggregator_type='pool', activation=None))
                 self.norms.append(nn.LayerNorm(hidden_dim))
 
+        elif model_type == 'sgformer':
+            # SGFormer: O(N) linearized global attention + local GIN, combined with alpha mixing.
+            # LayerNorm is applied inside the layer, so external norms are Identity.
+            self.convs.append(SGFormerFlatLayer(in_dim, hidden_dim, num_heads=4, alpha=0.5))
+            self.norms.append(nn.Identity())
+            self.dropouts.append(nn.Dropout(dropout))
+
+            for _ in range(num_layers - 2):
+                self.convs.append(SGFormerFlatLayer(hidden_dim, hidden_dim, num_heads=4, alpha=0.5))
+                self.norms.append(nn.Identity())
+                self.dropouts.append(nn.Dropout(dropout))
+
+            if num_layers > 1:
+                self.convs.append(SGFormerFlatLayer(hidden_dim, hidden_dim, num_heads=4, alpha=0.5))
+                self.norms.append(nn.Identity())
+
         elif model_type == 'egnn':
             # E(n) Equivariant GNN - rotation/translation equivariant
             # EGNN operates on coordinates and features separately
@@ -763,6 +829,8 @@ class GNNClassifier(nn.Module):
                     h = conv(g, h)
                 elif self.model_type == 'sage':
                     h = conv(g, h)
+                elif self.model_type == 'sgformer':
+                    h = conv(g, h)
                 elif self.model_type == 'gat':
                     h = conv(g, h)
                     # DGL GATConv returns [N, num_heads, out_dim]; flatten heads to [N, hidden_dim].
@@ -818,9 +886,9 @@ def load_labels(dataset_root, split='train', labels_csv=None):
     in the resolved split directory.
     """
     split_dir = resolve_split_dir(dataset_root, split)
-    graph_stems = {canonical_graph_id(p.stem) for p in split_dir.glob('*.bin')}
+    graph_stems = {canonical_graph_id(p.stem) for p in split_dir.rglob('*.bin')}
     if not graph_stems:
-        graph_stems = {canonical_graph_id(p.stem) for p in split_dir.glob('*.pt')}
+        graph_stems = {canonical_graph_id(p.stem) for p in split_dir.rglob('*.pt')}
 
     root = Path(dataset_root)
     parent = root.parent
@@ -975,11 +1043,11 @@ class LabeledSHREC25Dataset(SHREC25SplitDataset):
 
             # Index the split directory once. This avoids thousands of costly
             # Path.exists() calls on remote or bucket-backed filesystems.
-            for path in split_dir.glob('*.bin'):
+            for path in split_dir.rglob('*.bin'):
                 available_files[canonical_graph_id(path.stem)] = path
                 if path.stem.endswith('_graph'):
                     available_files[path.stem] = path
-            for path in split_dir.glob('*.pt'):
+            for path in split_dir.rglob('*.pt'):
                 available_files[canonical_graph_id(path.stem)] = path
                 if path.stem.endswith('_graph'):
                     available_files[path.stem] = path
@@ -1062,6 +1130,7 @@ def compute_metrics(y_true, y_pred, num_classes=None):
         'accuracy': accuracy_score(y_true, y_pred),
         'balanced_accuracy': balanced_accuracy,
         'f1_macro': f1_score(y_true, y_pred, average='macro', zero_division=0, labels=labels),
+        'f1_micro': f1_score(y_true, y_pred, average='micro', zero_division=0),
         'f1_weighted': f1_score(y_true, y_pred, average='weighted', zero_division=0, labels=labels),
         'precision_macro': precision_score(y_true, y_pred, average='macro', zero_division=0, labels=labels),
         'recall_macro': recall_score(y_true, y_pred, average='macro', zero_division=0, labels=labels),
@@ -1306,7 +1375,7 @@ def main():
     parser.add_argument('--num-workers', type=int, default=4, help='Dataloader workers')
 
     # Model
-    parser.add_argument('--model', type=str, default='gat', choices=['gat', 'gcn', 'resgcn', 'gin', 'sage', 'egnn', 'gvp'],
+    parser.add_argument('--model', type=str, default='gat', choices=['gat', 'gcn', 'resgcn', 'gin', 'sage', 'egnn', 'gvp', 'sgformer'],
                        help='GNN model type (resgcn=ResidualGCN, egnn=E(n) Equivariant GNN, gvp=Geometric Vector Perceptron GNN)')
     parser.add_argument('--hidden-dim', type=int, default=256, help='Hidden dimension')
     parser.add_argument('--num-layers', type=int, default=3, help='Number of GNN layers')

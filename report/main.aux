@@ -1,0 +1,231 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{shrec25}
+\citation{pointmamba}
+\citation{mamba3d}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{3}{section.1}\protected@file@percent }
+\newlabel{sec:intro}{{1}{3}{Introduction}{section.1}{}}
+\@writefile{toc}{\contentsline {paragraph}{Why this problem is hard.}{3}{section*.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Contributions.}{3}{section*.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Dataset: SHREC\,25 Protein Surfaces}{4}{section.2}\protected@file@percent }
+\newlabel{sec:dataset}{{2}{4}{Dataset: SHREC\,25 Protein Surfaces}{section.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Overview}{4}{subsection.2.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces SHREC\,25 dataset statistics.}}{4}{table.caption.4}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{tab:dataset_stats}{{1}{4}{SHREC\,25 dataset statistics}{table.caption.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Class Imbalance}{4}{subsection.2.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Class distribution (99 classes, 9\,244 training proteins). Left: sorted sample count per class on log scale; orange bars highlight the hard/confusable classes studied in depth. Right: cumulative distribution of sample counts per class.}}{4}{figure.caption.5}\protected@file@percent }
+\newlabel{fig:class_dist}{{1}{4}{Class distribution (99 classes, 9\,244 training proteins). Left: sorted sample count per class on log scale; orange bars highlight the hard/confusable classes studied in depth. Right: cumulative distribution of sample counts per class}{figure.caption.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Per-mesh Features}{4}{subsection.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Hard and Confusable Class Pairs}{5}{subsection.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Data Pipeline: VTK Mesh to SSL Graph}{6}{section.3}\protected@file@percent }
+\newlabel{sec:pipeline}{{3}{6}{Data Pipeline: VTK Mesh to SSL Graph}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Stage 1 --- SSL Graph Construction}{6}{subsection.3.1}\protected@file@percent }
+\newlabel{sec:pipeline:ssl}{{3.1}{6}{Stage 1 --- SSL Graph Construction}{subsection.3.1}{}}
+\@writefile{toc}{\contentsline {paragraph}{Farthest-point subsampling (FPS).}{6}{section*.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{k-NN graph construction.}{6}{section*.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Feature extraction.}{6}{section*.8}\protected@file@percent }
+\newlabel{eq:feature_vec}{{1}{6}{Feature extraction}{equation.3.1}{}}
+\@writefile{toc}{\contentsline {paragraph}{Output format.}{6}{section*.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Stage 2 --- Geodesic Patch Decomposition}{6}{subsection.3.2}\protected@file@percent }
+\newlabel{sec:pipeline:patch}{{3.2}{6}{Stage 2 --- Geodesic Patch Decomposition}{subsection.3.2}{}}
+\@writefile{toc}{\contentsline {paragraph}{Patch seed selection.}{6}{section*.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Geodesic Voronoi assignment.}{6}{section*.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Patch meta-graph.}{6}{section*.12}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Output format.}{7}{section*.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Summary}{7}{subsection.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Dataset Separability Analysis}{8}{section.4}\protected@file@percent }
+\newlabel{sec:analysis}{{4}{8}{Dataset Separability Analysis}{section.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Graph-level Separability (1k-node SSL Graphs)}{8}{subsection.4.1}\protected@file@percent }
+\newlabel{sec:analysis:graph}{{4.1}{8}{Graph-level Separability (1k-node SSL Graphs)}{subsection.4.1}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.1}Sliced Wasserstein: Shape vs.\ Features vs.\ Joint}{8}{subsubsection.4.1.1}\protected@file@percent }
+\newlabel{sec:analysis:graph:sw}{{4.1.1}{8}{Sliced Wasserstein: Shape vs.\ Features vs.\ Joint}{subsubsection.4.1.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Graph-level Sliced Wasserstein for the three confusable pairs and a control pair. SW(xyz) is uniformly low ($<$0.065) for all pairs including controls, confirming that 3D surface shape alone carries no class-discriminating signal. SW(feat) correctly distinguishes easy pairs (0.10--0.14) from the near-inseparable pair (61,\,90) (0.027).}}{8}{figure.caption.14}\protected@file@percent }
+\newlabel{fig:graph_sw}{{2}{8}{Graph-level Sliced Wasserstein for the three confusable pairs and a control pair. SW(xyz) is uniformly low ($<$0.065) for all pairs including controls, confirming that 3D surface shape alone carries no class-discriminating signal. SW(feat) correctly distinguishes easy pairs (0.10--0.14) from the near-inseparable pair (61,\,90) (0.027)}{figure.caption.14}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Graph-level SW distances on 1\,000-node SSL graphs.}}{8}{table.caption.15}\protected@file@percent }
+\newlabel{tab:graph_sw}{{2}{8}{Graph-level SW distances on 1\,000-node SSL graphs}{table.caption.15}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.2}Spatial Autocorrelation: Moran's I}{9}{subsubsection.4.1.2}\protected@file@percent }
+\newlabel{sec:analysis:graph:moran}{{4.1.2}{9}{Spatial Autocorrelation: Moran's I}{subsubsection.4.1.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Left: $|\Delta I|$ per feature for each pair. Potential shows the largest spatial patterning difference, especially for (86,\,14) ($|\Delta I| = 0.112$). Right: mean Moran's I per feature across all 12 classes. NormalPotential is nearly spatially random ($I \approx 0.07$); coordinates are very smooth ($I \approx 0.96$).}}{9}{figure.caption.16}\protected@file@percent }
+\newlabel{fig:moran}{{3}{9}{Left: $|\Delta I|$ per feature for each pair. Potential shows the largest spatial patterning difference, especially for (86,\,14) ($|\Delta I| = 0.112$). Right: mean Moran's I per feature across all 12 classes. NormalPotential is nearly spatially random ($I \approx 0.07$); coordinates are very smooth ($I \approx 0.96$)}{figure.caption.16}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.3}Patch-SVM vs.\ Global-SVM on Graphs}{9}{subsubsection.4.1.3}\protected@file@percent }
+\newlabel{sec:analysis:graph:svm}{{4.1.3}{9}{Patch-SVM vs.\ Global-SVM on Graphs}{subsubsection.4.1.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Full-resolution Analysis (VTK Meshes)}{9}{subsection.4.2}\protected@file@percent }
+\newlabel{sec:analysis:vtk}{{4.2}{9}{Full-resolution Analysis (VTK Meshes)}{subsection.4.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Global-SVM (32D) vs.\ Patch-SVM (512D) balanced accuracy on 1\,000-node graphs. The delta annotation shows how much the patch layout adds. For all pairs, adding spatial information either gives no gain or actively hurts, ruling out spatial arrangement as the missing discriminating signal.}}{10}{figure.caption.17}\protected@file@percent }
+\newlabel{fig:graph_svm}{{4}{10}{Global-SVM (32D) vs.\ Patch-SVM (512D) balanced accuracy on 1\,000-node graphs. The delta annotation shows how much the patch layout adds. For all pairs, adding spatial information either gives no gain or actively hurts, ruling out spatial arrangement as the missing discriminating signal}{figure.caption.17}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.1}Vertex-level KS Test (All 8 Features)}{10}{subsubsection.4.2.1}\protected@file@percent }
+\newlabel{sec:analysis:vtk:ks}{{4.2.1}{10}{Vertex-level KS Test (All 8 Features)}{subsubsection.4.2.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces KS statistic for all 8 features grouped into three panels: electrostatics (left), normals (centre), normalised coordinates (right). Coordinate KS values (0.01--0.04) are near-zero and comparable across confusable and control pairs --- shape marginals do not separate classes.}}{10}{figure.caption.18}\protected@file@percent }
+\newlabel{fig:ks}{{5}{10}{KS statistic for all 8 features grouped into three panels: electrostatics (left), normals (centre), normalised coordinates (right). Coordinate KS values (0.01--0.04) are near-zero and comparable across confusable and control pairs --- shape marginals do not separate classes}{figure.caption.18}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces KS statistics (VTK vertex-level, full resolution). Coordinate columns are for per-protein normalised coordinates.}}{11}{table.caption.19}\protected@file@percent }
+\newlabel{tab:ks}{{3}{11}{KS statistics (VTK vertex-level, full resolution). Coordinate columns are for per-protein normalised coordinates}{table.caption.19}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces VTK Sliced Wasserstein per component. The newly added \textit  {Coords} column confirms SW(Coords) $\leq $0.033 for all pairs --- well below SW(Potential) for any separable pair.}}{11}{figure.caption.20}\protected@file@percent }
+\newlabel{fig:sw}{{6}{11}{VTK Sliced Wasserstein per component. The newly added \textit {Coords} column confirms SW(Coords) $\leq $0.033 for all pairs --- well below SW(Potential) for any separable pair}{figure.caption.20}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.2}Sliced Wasserstein (VTK, All 5 Components)}{11}{subsubsection.4.2.2}\protected@file@percent }
+\newlabel{sec:analysis:vtk:sw}{{4.2.2}{11}{Sliced Wasserstein (VTK, All 5 Components)}{subsubsection.4.2.2}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.3}Protein-level SVM (Full-res VTK)}{11}{subsubsection.4.2.3}\protected@file@percent }
+\newlabel{sec:analysis:vtk:svm}{{4.2.3}{11}{Protein-level SVM (Full-res VTK)}{subsubsection.4.2.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Comparison: 1k Graph $\approx $ Full Resolution}{11}{subsection.4.3}\protected@file@percent }
+\newlabel{sec:analysis:compare}{{4.3}{11}{Comparison: 1k Graph $\approx $ Full Resolution}{subsection.4.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Geometric Feature Analysis (21D Dataset)}{11}{subsection.4.4}\protected@file@percent }
+\newlabel{sec:analysis:geom}{{4.4}{11}{Geometric Feature Analysis (21D Dataset)}{subsection.4.4}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Sliced Wasserstein distances (full-resolution VTK, 5 components).}}{12}{table.caption.21}\protected@file@percent }
+\newlabel{tab:sw}{{4}{12}{Sliced Wasserstein distances (full-resolution VTK, 5 components)}{table.caption.21}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Left: protein-level SVM balanced accuracy, 1k-node graph vs full-res VTK. Annotations show the gain from full resolution ($+$0.02--0.03). Right: SW(feat) on graphs vs SW(All-5D) on VTK --- same ranking, VTK slightly higher due to better distributional estimates from more vertices.}}{12}{figure.caption.22}\protected@file@percent }
+\newlabel{fig:resolution}{{7}{12}{Left: protein-level SVM balanced accuracy, 1k-node graph vs full-res VTK. Annotations show the gain from full resolution ($+$0.02--0.03). Right: SW(feat) on graphs vs SW(All-5D) on VTK --- same ranking, VTK slightly higher due to better distributional estimates from more vertices}{figure.caption.22}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.1}KS Test on Geometric Features}{12}{subsubsection.4.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.2}Spatial Autocorrelation of Geometric Features}{12}{subsubsection.4.4.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Separability: 1k-node graph vs full-resolution VTK.}}{13}{table.caption.23}\protected@file@percent }
+\newlabel{tab:resolution}{{5}{13}{Separability: 1k-node graph vs full-resolution VTK}{table.caption.23}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces KS statistics for the top geometric features (vertex-level, 1k SSL graphs). All values are below 0.04 --- well below Potential (0.031--0.250).}}{13}{table.caption.25}\protected@file@percent }
+\newlabel{tab:ks_geom}{{6}{13}{KS statistics for the top geometric features (vertex-level, 1k SSL graphs). All values are below 0.04 --- well below Potential (0.031--0.250)}{table.caption.25}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.3}Effect on Protein-level Classification}{13}{subsubsection.4.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.4}HierGIN Training on 14D Geometric Features}{13}{subsubsection.4.4.4}\protected@file@percent }
+\newlabel{sec:analysis:geom:gnn}{{4.4.4}{13}{HierGIN Training on 14D Geometric Features}{subsubsection.4.4.4}{}}
+\@writefile{toc}{\contentsline {paragraph}{Normalization pitfall.}{13}{section*.26}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces 21D geometric dataset analysis. \textbf  {Top-left}: KS heatmap for all 13 geometric features across 4 pairs. All values are below 0.04; \textit  {surf\_variation} and \textit  {dist\_centroid} are the strongest individual discriminators. \textbf  {Top-right}: mean Moran's~I per feature. Distance features have near-perfect autocorrelation ($I > 0.97$), while Laplacian curvature and planarity are more locally variable. \textbf  {Bottom-left}: SW comparison shows SW(13D geom) $\leq $ 0.041 for all pairs. \textbf  {Bottom-right}: SVM balanced accuracy --- adding geometric features gives $+$0.085 for the hardest pair (61,\,90) and $+$0.062 for (86,\,14), suggesting geometric shape provides complementary information to electrostatics.}}{14}{figure.caption.24}\protected@file@percent }
+\newlabel{fig:geom}{{8}{14}{21D geometric dataset analysis. \textbf {Top-left}: KS heatmap for all 13 geometric features across 4 pairs. All values are below 0.04; \textit {surf\_variation} and \textit {dist\_centroid} are the strongest individual discriminators. \textbf {Top-right}: mean Moran's~I per feature. Distance features have near-perfect autocorrelation ($I > 0.97$), while Laplacian curvature and planarity are more locally variable. \textbf {Bottom-left}: SW comparison shows SW(13D geom) $\leq $ 0.041 for all pairs. \textbf {Bottom-right}: SVM balanced accuracy --- adding geometric features gives $+$0.085 for the hardest pair (61,\,90) and $+$0.062 for (86,\,14), suggesting geometric shape provides complementary information to electrostatics}{figure.caption.24}{}}
+\@writefile{toc}{\contentsline {paragraph}{Global normalisation fix (\texttt  {geom14d\_raw}).}{14}{section*.27}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Results.}{15}{section*.28}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Curvature Feature Analysis (12D Dataset)}{15}{subsection.4.5}\protected@file@percent }
+\newlabel{sec:analysis:curvature}{{4.5}{15}{Curvature Feature Analysis (12D Dataset)}{subsection.4.5}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces Left: vertex-level KS statistics for the four curvature features (bars) vs Potential (triangle, dashed line). All curvature KS values are below 0.05 for every pair; Potential reaches 0.250 for (86,\,14). Centre: Sliced Wasserstein per feature group; SW(4D curv) is $3\text  {--}6\times $ smaller than SW(8D existing) for the confusable pairs. Right: protein-level SVM balanced accuracy; adding curvature to the 8D features changes accuracy by at most $+$0.020 for the confusable pairs, confirming negligible gain.}}{15}{figure.caption.29}\protected@file@percent }
+\newlabel{fig:curvature}{{9}{15}{Left: vertex-level KS statistics for the four curvature features (bars) vs Potential (triangle, dashed line). All curvature KS values are below 0.05 for every pair; Potential reaches 0.250 for (86,\,14). Centre: Sliced Wasserstein per feature group; SW(4D curv) is $3\text {--}6\times $ smaller than SW(8D existing) for the confusable pairs. Right: protein-level SVM balanced accuracy; adding curvature to the 8D features changes accuracy by at most $+$0.020 for the confusable pairs, confirming negligible gain}{figure.caption.29}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.5.1}KS Test on Curvature Features}{15}{subsubsection.4.5.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces KS statistics for the four curvature features (vertex-level, 1k SSL graphs). Gaussian curvature is the strongest individual discriminator, yet it remains well below the Potential baseline.}}{16}{table.caption.30}\protected@file@percent }
+\newlabel{tab:ks_curv}{{7}{16}{KS statistics for the four curvature features (vertex-level, 1k SSL graphs). Gaussian curvature is the strongest individual discriminator, yet it remains well below the Potential baseline}{table.caption.30}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.5.2}Sliced Wasserstein on Curvature}{16}{subsubsection.4.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.5.3}Spatial Autocorrelation of Curvature}{16}{subsubsection.4.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.5.4}Effect on Protein-level Classification}{16}{subsubsection.4.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Summary}{16}{subsection.4.6}\protected@file@percent }
+\newlabel{sec:analysis:summary}{{4.6}{16}{Summary}{subsection.4.6}{}}
+\citation{gin}
+\citation{gin}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Model Architectures}{18}{section.5}\protected@file@percent }
+\newlabel{sec:arch}{{5}{18}{Model Architectures}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Flat GNN Baseline}{18}{subsection.5.1}\protected@file@percent }
+\newlabel{sec:arch:flat}{{5.1}{18}{Flat GNN Baseline}{subsection.5.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Hierarchical GNN: HierGIN}{18}{subsection.5.2}\protected@file@percent }
+\newlabel{sec:arch:hier}{{5.2}{18}{Hierarchical GNN: HierGIN}{subsection.5.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces HierGIN architecture. A node-level GIN processes 1\,000-node surface graphs; a geodesic Voronoi pooling layer coarsens to 64 patch nodes; a patch-level GIN refines patch representations; global max readout feeds an MLP classifier.}}{18}{figure.caption.31}\protected@file@percent }
+\newlabel{fig:arch}{{10}{18}{HierGIN architecture. A node-level GIN processes 1\,000-node surface graphs; a geodesic Voronoi pooling layer coarsens to 64 patch nodes; a patch-level GIN refines patch representations; global max readout feeds an MLP classifier}{figure.caption.31}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.1}Node-level GIN}{18}{subsubsection.5.2.1}\protected@file@percent }
+\newlabel{eq:gin}{{2}{18}{Node-level GIN}{equation.5.2}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.2}Geodesic Voronoi Patch Pooling}{18}{subsubsection.5.2.2}\protected@file@percent }
+\newlabel{sec:arch:pool}{{5.2.2}{18}{Geodesic Voronoi Patch Pooling}{subsubsection.5.2.2}{}}
+\newlabel{eq:attn_pool}{{3}{18}{Geodesic Voronoi Patch Pooling}{equation.5.3}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.3}Patch-level GIN}{19}{subsubsection.5.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4}Readout and Classification}{19}{subsubsection.5.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Node Backbone Variants}{19}{subsection.5.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Node backbone ablation (4D features, h=512, proper eval over 88 classes). * PNA evaluated from training-time metrics due to inference crash (missing delta parameter); indicated values are slightly lower bound.}}{19}{table.caption.32}\protected@file@percent }
+\newlabel{tab:backbones}{{8}{19}{Node backbone ablation (4D features, h=512, proper eval over 88 classes). * PNA evaluated from training-time metrics due to inference crash (missing delta parameter); indicated values are slightly lower bound}{table.caption.32}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces Validation macro-F1 (left) and training macro-F1 (right) over 80 epochs for the backbone ablation. All eight backbones use 4D features and are otherwise identical.}}{19}{figure.caption.33}\protected@file@percent }
+\newlabel{fig:training_curves_all}{{11}{19}{Validation macro-F1 (left) and training macro-F1 (right) over 80 epochs for the backbone ablation. All eight backbones use 4D features and are otherwise identical}{figure.caption.33}{}}
+\citation{riconv2}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Rotation-Invariant Node Backbone: RI-GIN}{20}{subsection.5.4}\protected@file@percent }
+\newlabel{sec:arch:rigin}{{5.4}{20}{Rotation-Invariant Node Backbone: RI-GIN}{subsection.5.4}{}}
+\newlabel{eq:ri_scalars}{{4}{20}{Rotation-Invariant Node Backbone: RI-GIN}{equation.5.4}{}}
+\newlabel{eq:ri_msg}{{5}{20}{Rotation-Invariant Node Backbone: RI-GIN}{equation.5.5}{}}
+\@writefile{toc}{\contentsline {paragraph}{Computational note.}{20}{section*.34}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}VTK Mesh Visualisation}{20}{subsection.5.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {12}{\ignorespaces Protein surface meshes for the three confusable class pairs (N=5 per class). Colour: blue = negative potential, red = positive potential. Classes 61 and 90 (top pair) show near-identical surface topologies and charge patterns, explaining their near-inseparability.}}{21}{figure.caption.35}\protected@file@percent }
+\newlabel{fig:vtk}{{12}{21}{Protein surface meshes for the three confusable class pairs (N=5 per class). Colour: blue = negative potential, red = positive potential. Classes 61 and 90 (top pair) show near-identical surface topologies and charge patterns, explaining their near-inseparability}{figure.caption.35}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Training Setup}{21}{section.6}\protected@file@percent }
+\newlabel{sec:training}{{6}{21}{Training Setup}{section.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Cosine Annealing with Warmup}{21}{subsection.6.1}\protected@file@percent }
+\newlabel{eq:lr_schedule}{{6}{21}{Cosine Annealing with Warmup}{equation.6.6}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces HierGIN training hyperparameters (best run: HierGIN-8D).}}{22}{table.caption.36}\protected@file@percent }
+\newlabel{tab:hyperparams}{{9}{22}{HierGIN training hyperparameters (best run: HierGIN-8D)}{table.caption.36}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Class Weighting}{22}{subsection.6.2}\protected@file@percent }
+\newlabel{eq:class_weight}{{7}{22}{Class Weighting}{equation.6.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Early Stopping}{22}{subsection.6.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Validation Split}{23}{subsection.6.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Ablation Studies}{24}{section.7}\protected@file@percent }
+\newlabel{sec:ablation}{{7}{24}{Ablation Studies}{section.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Feature Mode Ablation}{24}{subsection.7.1}\protected@file@percent }
+\newlabel{sec:ablation:features}{{7.1}{24}{Feature Mode Ablation}{subsection.7.1}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces Feature mode definitions. Dimension counts the entries of $\mathbf  {x}_i$ fed to the node GIN. All 8D indices: [0]=Potential\_norm, [1]=NormPot\_norm, [2--4]=$(n_x,n_y,n_z)$, [5--7]=$(x,y,z)_\text  {ssl}$.}}{24}{table.caption.37}\protected@file@percent }
+\newlabel{tab:feature_modes}{{10}{24}{Feature mode definitions. Dimension counts the entries of $\mathbf {x}_i$ fed to the node GIN. All 8D indices: [0]=Potential\_norm, [1]=NormPot\_norm, [2--4]=$(n_x,n_y,n_z)$, [5--7]=$(x,y,z)_\text {ssl}$}{table.caption.37}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces Feature ablation test metrics (HierGIN h=512, eval over 88 classes). Best values in bold.}}{24}{table.caption.38}\protected@file@percent }
+\newlabel{tab:ablation_metrics}{{11}{24}{Feature ablation test metrics (HierGIN h=512, eval over 88 classes). Best values in bold}{table.caption.38}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {13}{\ignorespaces Left: macro-F1 of all feature configurations and external methods. Right: full metric comparison across the five ablation configs. The 8D model outperforms all single-feature subsets.}}{24}{figure.caption.39}\protected@file@percent }
+\newlabel{fig:ablation_summary}{{13}{24}{Left: macro-F1 of all feature configurations and external methods. Right: full metric comparison across the five ablation configs. The 8D model outperforms all single-feature subsets}{figure.caption.39}{}}
+\@writefile{toc}{\contentsline {paragraph}{Findings.}{24}{section*.40}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {14}{\ignorespaces Radar chart: four metrics across five feature configurations. The 8D polygon (blue) is uniformly larger; the 6D and 7D-no-Pot polygons collapse on the balanced accuracy axis, reflecting their inability to handle rare classes.}}{25}{figure.caption.41}\protected@file@percent }
+\newlabel{fig:radar}{{14}{25}{Radar chart: four metrics across five feature configurations. The 8D polygon (blue) is uniformly larger; the 6D and 7D-no-Pot polygons collapse on the balanced accuracy axis, reflecting their inability to handle rare classes}{figure.caption.41}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Patch Count Ablation}{25}{subsection.7.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {12}{\ignorespaces Per-class F1 on hard/confusable classes for each feature configuration.}}{26}{table.caption.42}\protected@file@percent }
+\newlabel{tab:per_class_f1}{{12}{26}{Per-class F1 on hard/confusable classes for each feature configuration}{table.caption.42}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {15}{\ignorespaces Per-class F1 for the seven hardest classes across all five feature configurations. Class\,61 shows the largest variance across configurations, benefitting most from NormalPotential. Class\,80 is effectively unlearnable with 6D features.}}{26}{figure.caption.43}\protected@file@percent }
+\newlabel{fig:per_class}{{15}{26}{Per-class F1 for the seven hardest classes across all five feature configurations. Class\,61 shows the largest variance across configurations, benefitting most from NormalPotential. Class\,80 is effectively unlearnable with 6D features}{figure.caption.43}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Hidden Dimension}{26}{subsection.7.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Node GIN Depth}{26}{subsection.7.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}LR Schedule}{26}{subsection.7.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {16}{\ignorespaces Validation training dynamics for the five feature ablation runs. Dashed lines: configurations without Potential (7D-no-Pot, 6D) converge to a much lower ceiling.}}{27}{figure.caption.44}\protected@file@percent }
+\newlabel{fig:training_curves_feat}{{16}{27}{Validation training dynamics for the five feature ablation runs. Dashed lines: configurations without Potential (7D-no-Pot, 6D) converge to a much lower ceiling}{figure.caption.44}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.6}Random Walk Positional Encoding}{27}{subsection.7.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.7}Patch-level Scalar Re-injection}{27}{subsection.7.7}\protected@file@percent }
+\newlabel{sec:ablation:patch_inject}{{7.7}{27}{Patch-level Scalar Re-injection}{subsection.7.7}{}}
+\@writefile{toc}{\contentsline {paragraph}{Motivation.}{27}{section*.45}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Experiments.}{27}{section*.46}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Findings.}{27}{section*.47}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.8}Rotation-Invariant Node Backbone (RI-GIN)}{28}{subsection.7.8}\protected@file@percent }
+\newlabel{sec:ablation:rigin}{{7.8}{28}{Rotation-Invariant Node Backbone (RI-GIN)}{subsection.7.8}{}}
+\@writefile{toc}{\contentsline {paragraph}{Motivation.}{28}{section*.48}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Implementation.}{28}{section*.49}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Results.}{28}{section*.50}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {13}{\ignorespaces RI-GIN vs.\ standard GIN on the same feature sets (88-class eval). RI-GIN results pending.}}{28}{table.caption.51}\protected@file@percent }
+\newlabel{tab:rigin}{{13}{28}{RI-GIN vs.\ standard GIN on the same feature sets (88-class eval). RI-GIN results pending}{table.caption.51}{}}
+\@writefile{toc}{\contentsline {paragraph}{Memory constraint.}{28}{section*.52}\protected@file@percent }
+\citation{shrec25}
+\citation{mamba3d}
+\citation{pointmamba}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Results and Comparison}{29}{section.8}\protected@file@percent }
+\newlabel{sec:results}{{8}{29}{Results and Comparison}{section.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Main Results Table}{29}{subsection.8.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Test set performance comparison (88-class evaluation). HierGIN metrics: macro average over the 88 classes that have $\geq $1 test sample (classes without test samples excluded from the macro denominator). External values reported as published. \textbf  {Bold}: best value per metric column. Primary metrics (Acc, Bal.Acc, Wtd-F1) are listed first.}}{29}{table.caption.53}\protected@file@percent }
+\newlabel{tab:main_results}{{14}{29}{Test set performance comparison (88-class evaluation). HierGIN metrics: macro average over the 88 classes that have $\geq $1 test sample (classes without test samples excluded from the macro denominator). External values reported as published. \textbf {Bold}: best value per metric column. Primary metrics (Acc, Bal.Acc, Wtd-F1) are listed first}{table.caption.53}{}}
+\@writefile{toc}{\contentsline {paragraph}{Key observations.}{29}{section*.54}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Backbone Comparison}{30}{subsection.8.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {17}{\ignorespaces Node backbone ablation: accuracy, balanced accuracy, and macro-F1 for eight backbone types under identical hyperparameters (4D features).}}{30}{figure.caption.55}\protected@file@percent }
+\newlabel{fig:backbone_ablation}{{17}{30}{Node backbone ablation: accuracy, balanced accuracy, and macro-F1 for eight backbone types under identical hyperparameters (4D features)}{figure.caption.55}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Per-class Analysis}{30}{subsection.8.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.4}Evaluation Protocol}{30}{subsection.8.4}\protected@file@percent }
+\newlabel{sec:eval_protocol}{{8.4}{30}{Evaluation Protocol}{subsection.8.4}{}}
+\@writefile{toc}{\contentsline {paragraph}{The 88-class vs.\ 99-class problem.}{30}{section*.56}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{How we address it.}{31}{section*.57}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Why this matters for the geom14d\_raw comparison.}{31}{section*.58}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {9}Analysis and Discussion}{32}{section.9}\protected@file@percent }
+\newlabel{sec:discussion}{{9}{32}{Analysis and Discussion}{section.9}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.1}Persistent Confusion Across Models}{32}{subsection.9.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.2}Feature Role Summary}{32}{subsection.9.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {15}{\ignorespaces Feature group roles derived from ablation and separability analysis.}}{32}{table.caption.59}\protected@file@percent }
+\newlabel{tab:feature_roles}{{15}{32}{Feature group roles derived from ablation and separability analysis}{table.caption.59}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.3}Hierarchical vs.\ Flat GNN}{32}{subsection.9.3}\protected@file@percent }
+\citation{esm2}
+\@writefile{toc}{\contentsline {paragraph}{Spatial hierarchy.}{33}{section*.60}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Information bottleneck.}{33}{section*.61}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.4}Why Point-cloud Methods Underperform}{33}{subsection.9.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.5}What Could Push Beyond the Ceiling}{33}{subsection.9.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.6}Limitations}{33}{subsection.9.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {10}Conclusion}{35}{section.10}\protected@file@percent }
+\newlabel{sec:conclusion}{{10}{35}{Conclusion}{section.10}{}}
+\@writefile{toc}{\contentsline {paragraph}{Pipeline.}{35}{section*.62}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Architecture.}{35}{section*.63}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Electrostatic potential is the key signal.}{35}{section*.64}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Dataset ceiling.}{35}{section*.65}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{State of the art.}{35}{section*.66}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Enriched feature datasets.}{35}{section*.67}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Negative results.}{35}{section*.68}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Future work.}{35}{section*.69}\protected@file@percent }
+\bibstyle{plain}
+\bibcite{shrec25}{1}
+\bibcite{gin}{2}
+\bibcite{pointmamba}{3}
+\bibcite{mamba3d}{4}
+\bibcite{esm2}{5}
+\bibcite{riconv2}{6}
+\gdef \@abspage@last{37}
