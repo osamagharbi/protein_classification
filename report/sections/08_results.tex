@@ -6,18 +6,22 @@
 \subsection{Main Results Table}
 
 Table~\ref{tab:main_results} summarises all runs in this study alongside
-two external SHREC\,25 entries.
+three SHREC\,25 external entries including the RIConv2 method of Barisin
+et al.~\cite{riconv2}.
 All HierGIN metrics use the proper 88-class evaluation protocol
-(Section~\ref{sec:eval_protocol}); external numbers are as published
-in the SHREC\,25 challenge report~\cite{shrec25}.
+(Section~\ref{sec:eval_protocol}).
+RIConv2 metrics are recomputed from their published prediction CSVs under
+the same 88-class protocol (their test set contains 90 classes including
+two --- classes 97 and 98 --- absent from ours; we restrict to the 88 shared
+classes for a fair comparison).
 
 \begin{table}[ht]
   \centering
-  \caption{Test set performance --- all runs (88-class evaluation).
+  \caption{Test set performance --- all methods (88-class macro-F1 protocol).
            \textbf{Bold}: best value per metric column.
-           $\dagger$~RI-GIN 14D is running at the time of writing.
-           $\ddagger$~Injection runs use 14D (global norm) features as base.
-           External method metrics are as published.}
+           $\dagger$~RI-GIN 14D pending at time of writing.
+           $\ddagger$~Injection runs use 14D (global norm) features.
+           RIConv2 metrics recomputed from published prediction CSVs.}
   \label{tab:main_results}
   \setlength{\tabcolsep}{4.5pt}
   \begin{tabular}{llrrrr}
@@ -25,10 +29,12 @@ in the SHREC\,25 challenge report~\cite{shrec25}.
     \textbf{Method} & \textbf{Features}
       & \textbf{Acc} & \textbf{Bal.Acc} & \textbf{Macro-F1} & \textbf{Wtd-F1} \\
     \midrule
-    \multicolumn{6}{l}{\textit{External baselines}} \\
-    \quad Flat GIN (h512, 6L)         & 4D          & ---   & ---   & 0.640 & ---   \\
-    \quad Mamba3D~\cite{mamba3d}      & point cloud & ---   & 0.662 & 0.672 & 0.825 \\
-    \quad PointMamba~\cite{pointmamba}& point cloud & ---   & 0.714 & 0.720 & 0.872 \\
+    \multicolumn{6}{l}{\textit{External baselines (other SHREC\,25 entries)}} \\
+    \quad Flat GIN (h512, 6L)         & 4D                  & ---   & ---   & 0.640 & ---   \\
+    \quad Mamba3D~\cite{mamba3d}      & point cloud         & ---   & 0.662 & 0.672 & 0.825 \\
+    \quad PointMamba~\cite{pointmamba}& point cloud         & ---   & 0.714 & 0.720 & 0.872 \\
+    \quad RIConv2 RUN1~\cite{riconv2} & xyz + normals only  & 0.914 & 0.813 & 0.838 & 0.910 \\
+    \quad \textbf{RIConv2 RUN2}~\cite{riconv2} & xyz + normals + Potential & \textbf{0.929} & \textbf{0.828} & \textbf{0.854} & \textbf{0.925} \\
     \midrule
     \multicolumn{6}{l}{\textit{HierGIN --- feature ablation (standard GIN backbone)}} \\
     \quad HierGIN 6D                  & xyz + normals        & 0.783 & 0.612 & 0.619 & 0.760 \\
@@ -55,43 +61,47 @@ in the SHREC\,25 challenge report~\cite{shrec25}.
 \paragraph{Key observations.}
 \begin{enumerate}
 
-  \item \textbf{Best macro-F1: HierGIN 14D (global norm), 0.808.}
+  \item \textbf{RIConv2 is the top-performing method on this benchmark.}
+        RIConv2 RUN2 (xyz + normals + Potential, 1\,024 points, multi-scale RI
+        convolution) achieves macro-F1\,=\,0.854, balanced accuracy\,=\,0.828,
+        and accuracy\,=\,0.929 --- outperforming our best HierGIN-14D on every
+        metric.
+        Critically, RIConv2 RUN1 using \emph{geometry only} (no Potential)
+        already reaches macro-F1\,=\,0.838 and balanced accuracy\,=\,0.813,
+        matching or exceeding all HierGIN configurations including those with
+        electrostatic features (Section~\ref{sec:discussion:riconv2}).
+
+  \item \textbf{HierGIN 14D (global norm) is our best model, 0.808 macro-F1.}
         Adding 6 globally-normalised geometric features to the 8D base gives
         $+$1.0\,pp macro-F1 and $+$1.2\,pp balanced accuracy over the 8D
         model.
-        Normalisation scheme is critical: per-protein z-scoring erases
-        cross-protein scale differences and degrades macro-F1 to 0.752
-        ($-$5.6\,pp).
+        Normalisation scheme is critical: per-protein z-scoring degrades
+        macro-F1 to 0.752 ($-$5.6\,pp).
+        However, HierGIN-14D trails RIConv2 RUN1 (geometry-only) by 3\,pp ---
+        indicating that the architecture gap is larger than the feature gap.
+
+  \item \textbf{Within HierGIN, Potential is the dominant per-feature signal.}
+        Removing Potential costs $-$11.8\,pp macro-F1 (largest single-feature
+        drop in our ablation).
+        However, RIConv2 demonstrates that with a multi-scale rotation-invariant
+        architecture, geometry alone carries more signal than Potential does in
+        a flat kNN graph.
+        Potential provides a $+$1.6\,pp gain for RIConv2 (0.838 $\to$ 0.854)
+        vs.\ $+$11.8\,pp for HierGIN --- reflecting a qualitative difference
+        in how well each architecture exploits geometric information.
 
   \item \textbf{RI-GIN gives a consistent, modest improvement over standard GIN.}
-        On 8D features the RI backbone improves every metric vs.\ standard
-        GIN: accuracy $+$1.2\,pp (0.865 vs.\ 0.853), balanced accuracy
-        $+$1.3\,pp (0.813 vs.\ 0.800), macro-F1 $+$0.2\,pp (0.800
-        vs.\ 0.798), weighted-F1 $+$1.0\,pp.
-        Notably, the 8D RI-GIN matches the 14D global-norm model on accuracy
-        and balanced accuracy while using 6 fewer features --- the
-        rotation-invariant backbone recovers part of what enriched features
-        provide.
-
-  \item \textbf{HierGIN outperforms both SHREC\,25 external entries.}
-        PointMamba achieves a higher weighted-F1 (0.872 vs.\ 0.862) on a
-        likely different evaluation denominator, but our balanced accuracy
-        (0.812--0.813) substantially exceeds PointMamba's 0.714, indicating
-        far better recall across rare classes.
-
-  \item \textbf{Potential is the dominant signal.}
-        Removing Potential costs $-$11.8\,pp macro-F1 (the largest
-        single-feature drop).
-        The 4D model (xyz + Potential only) already matches the full 8D model
-        on accuracy, confirming that electrostatic potential drives most of the
-        discriminating power.
+        On 8D features the RI backbone improves every HierGIN metric:
+        accuracy $+$1.2\,pp, balanced accuracy $+$1.3\,pp, macro-F1 $+$0.2\,pp.
+        The gain is small compared to RIConv2's advantage, consistent with
+        the finding that our RI-GIN uses single-scale kNN-6 edge invariants
+        while RIConv2 uses multi-scale ball-query groups
+        (Section~\ref{sec:discussion:riconv2}).
 
   \item \textbf{Scalar injection consistently hurts.}
-        Injecting patch-mean raw scalars between the two patch GNN layers
-        causes $-$1.8\,pp (2-feat) and $-$3.0\,pp (8-feat) regression
-        relative to the 14D baseline.
-        More features injected = worse result, ruling out signal loss through
-        pooling as an explanation for the remaining accuracy gap.
+        Injecting patch-mean raw scalars causes $-$1.8\,pp to $-$3.0\,pp
+        regression, ruling out signal loss through pooling as an explanation
+        for HierGIN's performance gap.
 
 \end{enumerate}
 

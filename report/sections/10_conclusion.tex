@@ -5,76 +5,64 @@
 
 We presented a comprehensive study of protein family classification on the
 SHREC\,25 benchmark, spanning the full arc from VTK mesh preprocessing to
-hierarchical graph neural network training and detailed post-hoc analysis.
+hierarchical graph neural network training, detailed post-hoc analysis, and
+comparison against the RIConv2-based method of Barisin et al.~\cite{riconv2}.
 
-\paragraph{Pipeline.}
+\paragraph{Pipeline and architecture.}
 A two-stage pipeline converts raw VTK surface meshes into compact SSL graphs
 (1\,000 nodes, 8D features) and then into geodesic Voronoi patch assignments
-(64 patches), with all preprocessing implemented in pure Python and
-parallelisable across all available CPU cores.
-
-\paragraph{Architecture.}
+(64 patches).
 The HierGIN model stacks node-level GIN message passing, attention-weighted
 Voronoi patch pooling, patch-level GIN, and global max readout.
 The two-level pooling hierarchy is the principal driver of the $+$15.8\,pp
 improvement over flat GNN baselines.
 
-\paragraph{Electrostatic potential is the key signal.}
+\paragraph{Within-HierGIN: potential is the dominant signal.}
 Ablation experiments confirm that removing electrostatic potential degrades
-macro-F1 by 11.8\,pp --- the largest single-feature impact observed.
-NormalPotential adds a secondary gain, particularly for the hardest class
-pairs.
-Surface normals contribute a structural channel that improves recall on
-geometrically distinct families.
+macro-F1 by 11.8\,pp --- the largest single-feature impact in our ablation.
+NormalPotential adds a secondary gain ($+$1.4\,pp globally, critical for
+class\,61).
+Training HierGIN on a 14D feature set (8D\,+\,6 globally-normalised geometric
+features) achieves our best result: accuracy\,0.865, balanced accuracy\,0.812,
+macro-F1\,\textbf{0.808}.
 
-\paragraph{Dataset ceiling.}
-The pair (61,\,90) is near-inseparable under all current surface features
-(SVM balanced accuracy 0.56, SW(Potential) = 0.088).
-We estimate the ceiling with these features at macro-F1 $\approx$0.85--0.88;
-our best model at 0.808 is within 4--7\,pp of this ceiling.
-Closing the remaining gap requires sequence-level or volumetric information.
+\paragraph{Architecture gap: geometry is the primary signal.}
+Comparison with RIConv2~\cite{riconv2} --- an independently published SHREC\,25
+entry --- reveals that the primary bottleneck is architecture, not features.
+RIConv2 RUN1 (xyz\,+\,normals only, \emph{no chemical features}) achieves
+macro-F1\,=\,0.838 and balanced accuracy\,=\,0.813, outperforming all
+HierGIN configurations including those with electrostatic features.
+Adding Potential to RIConv2 (RUN2) gives only $+$1.6\,pp additional gain
+(0.838$\to$0.854).
+The critical difference is RIConv2's multi-scale ball-query grouping with
+rotation-invariant local reference frames, which builds hierarchical local
+surface descriptors invisible to a kNN-6 graph.
 
-\paragraph{State of the art.}
-HierGIN-14D (global norm) achieves macro-F1 $=$ \textbf{0.808}, accuracy
-$=$ \textbf{0.865}, and balanced accuracy $=$ \textbf{0.812}, outperforming
-both SHREC\,25 entries PointMamba (0.720) and Mamba3D (0.672).
-The rotation-invariant backbone (RI-GIN) applied to 8D features matches
-the 14D model on accuracy (0.865) and balanced accuracy (0.813) while using
-6 fewer input features, offering a promising route toward combining both
-improvements.
-The surface-topology-aware graph construction, combined with electrostatic
-features and correct global normalisation, gives a structural advantage over
-general point-cloud methods.
-
-\paragraph{Enriched feature datasets.}
-The 12D curvature-enriched dataset adds no separability beyond the 8D baseline
-($\Delta\text{SVM} \leq +0.020$).
-The 21D geometric-enriched dataset gains $+$0.085 SVM balanced accuracy for the
-near-inseparable (61,\,90) pair.
-Training HierGIN on a 14D subset (8D $+$ 6 geometric) with \emph{global}
-normalisation (not per-protein z-scoring) achieves the best overall results:
-accuracy 0.865, balanced accuracy 0.812, weighted-F1 0.862, macro-F1
-\textbf{0.808}, outperforming the 8D baseline across all six metrics and
-establishing a new state of the art on SHREC\,25.
-The normalisation scheme is critical: per-protein z-scoring erases
-cross-protein scale differences and degrades macro-F1 to 0.752.
+\paragraph{The confusion pairs are architecture-limited.}
+We initially identified (61,\,90) as near-inseparable based on low marginal
+KS/SW statistics for single-scale edge distributions (SW(RI)\,=\,0.004).
+RIConv2 RUN1 achieves F1\,=\,0.887 on class\,61 using only geometry,
+refuting this claim.
+The confusion was not data-intrinsic but a consequence of HierGIN's
+coarse single-scale graph representation.
+The separability analysis correctly characterised what HierGIN can access;
+the error was generalising from ``not in kNN-6 edge marginals'' to
+``not in the data''.
 
 \paragraph{Negative results.}
-Two directions that did \emph{not} improve performance are worth recording.
-Patch-level scalar re-injection --- feeding patch-mean raw electrostatic
-values back between the two patch GNN layers --- consistently hurt performance
-($-$1.8\,pp to $-$3.0\,pp macro-F1), ruling out ``signal loss through
-pooling'' as an explanation for the remaining gap.
-The failure is informative: the attention pooling already encodes the
-relevant electrostatic information; explicit re-injection is redundant and
-disrupts the learned representations.
+Patch-level scalar re-injection ($-$1.8\,pp to $-$3.0\,pp macro-F1) and
+per-protein z-scoring of geometric features ($-$5.6\,pp) are both informative
+failures.
+The RI-GIN backbone gives a modest $+$0.2\,pp macro-F1 / $+$1.3\,pp balanced
+accuracy over standard GIN on 8D features, consistent with a representation
+regularisation effect rather than the large geometric gain seen in RIConv2.
 
 \paragraph{Future work.}
-Ongoing experiments evaluate a rotation-invariant node backbone (RI-GIN)
-that encodes each edge message as a set of SO(3)-invariant scalars, removing
-the dependence on global orientation.
-Beyond this, promising directions include reducing the train-val overfitting
-gap in the 14D model via regularisation or augmentation, contrastive
-pre-training on full-resolution meshes, integration of protein language model
-embeddings (e.g.\ ESM-2), and ensemble approaches that flag the
-near-inseparable (61,\,90) pair for human review.
+The highest-priority direction is replacing HierGIN's kNN-6 node stage with
+RIConv2-style multi-scale ball-query grouping while retaining the patch-level
+GNN for coarse spatial reasoning.
+The $+$1.6\,pp Potential gain in RIConv2 suggests that electrostatic features
+still contribute on a strong geometric backbone.
+Further gains beyond macro-F1\,$\approx$\,0.85 will likely require sequence
+features (e.g.\ ESM-2~\cite{esm2}) to resolve families whose surfaces are
+structurally and chemically similar.

@@ -194,50 +194,61 @@
 \@writefile{lot}{\contentsline {table}{\numberline {16}{\ignorespaces RI-GIN vs.\ standard GIN on the same feature sets (88-class eval). RI-GIN results pending.}}{30}{table.caption.55}\protected@file@percent }
 \newlabel{tab:rigin}{{16}{30}{RI-GIN vs.\ standard GIN on the same feature sets (88-class eval). RI-GIN results pending}{table.caption.55}{}}
 \@writefile{toc}{\contentsline {paragraph}{Memory constraint.}{30}{section*.56}\protected@file@percent }
-\citation{shrec25}
+\citation{riconv2}
 \citation{mamba3d}
 \citation{pointmamba}
+\citation{riconv2}
+\citation{riconv2}
 \@writefile{toc}{\contentsline {section}{\numberline {8}Results and Comparison}{31}{section.8}\protected@file@percent }
 \newlabel{sec:results}{{8}{31}{Results and Comparison}{section.8}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Main Results Table}{31}{subsection.8.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {17}{\ignorespaces Test set performance --- all runs (88-class evaluation). \textbf  {Bold}: best value per metric column. $\dagger $~RI-GIN 14D is running at the time of writing. $\ddagger $~Injection runs use 14D (global norm) features as base. External method metrics are as published.}}{31}{table.caption.57}\protected@file@percent }
-\newlabel{tab:main_results}{{17}{31}{Test set performance --- all runs (88-class evaluation). \textbf {Bold}: best value per metric column. $\dagger $~RI-GIN 14D is running at the time of writing. $\ddagger $~Injection runs use 14D (global norm) features as base. External method metrics are as published}{table.caption.57}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {17}{\ignorespaces Test set performance --- all methods (88-class macro-F1 protocol). \textbf  {Bold}: best value per metric column. $\dagger $~RI-GIN 14D pending at time of writing. $\ddagger $~Injection runs use 14D (global norm) features. RIConv2 metrics recomputed from published prediction CSVs.}}{31}{table.caption.57}\protected@file@percent }
+\newlabel{tab:main_results}{{17}{31}{Test set performance --- all methods (88-class macro-F1 protocol). \textbf {Bold}: best value per metric column. $\dagger $~RI-GIN 14D pending at time of writing. $\ddagger $~Injection runs use 14D (global norm) features. RIConv2 metrics recomputed from published prediction CSVs}{table.caption.57}{}}
 \@writefile{toc}{\contentsline {paragraph}{Key observations.}{31}{section*.58}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Backbone Comparison}{32}{subsection.8.2}\protected@file@percent }
 \@writefile{lof}{\contentsline {figure}{\numberline {17}{\ignorespaces Node backbone ablation: accuracy, balanced accuracy, and macro-F1 for eight backbone types (4D features, all other hyperparameters fixed).}}{32}{figure.caption.59}\protected@file@percent }
 \newlabel{fig:backbone_ablation}{{17}{32}{Node backbone ablation: accuracy, balanced accuracy, and macro-F1 for eight backbone types (4D features, all other hyperparameters fixed)}{figure.caption.59}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Per-class Analysis}{32}{subsection.8.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.4}Evaluation Protocol}{32}{subsection.8.4}\protected@file@percent }
-\newlabel{sec:eval_protocol}{{8.4}{32}{Evaluation Protocol}{subsection.8.4}{}}
-\@writefile{toc}{\contentsline {paragraph}{The 88-class vs.\ 99-class problem.}{32}{section*.60}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.4}Evaluation Protocol}{33}{subsection.8.4}\protected@file@percent }
+\newlabel{sec:eval_protocol}{{8.4}{33}{Evaluation Protocol}{subsection.8.4}{}}
+\@writefile{toc}{\contentsline {paragraph}{The 88-class vs.\ 99-class problem.}{33}{section*.60}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{How we address it.}{33}{section*.61}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {9}Analysis and Discussion}{34}{section.9}\protected@file@percent }
 \newlabel{sec:discussion}{{9}{34}{Analysis and Discussion}{section.9}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {9.1}Persistent Confusion Across Models}{34}{subsection.9.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.1}Confusion Pairs: Architecture-Limited, Not Data-Limited}{34}{subsection.9.1}\protected@file@percent }
+\newlabel{sec:discussion:confusion}{{9.1}{34}{Confusion Pairs: Architecture-Limited, Not Data-Limited}{subsection.9.1}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {18}{\ignorespaces Per-class F1 on the seven hardest classes. RIConv2 geometry-only (RUN1) dramatically outperforms HierGIN-8D on every hard class, despite using no chemical features. This refutes the claim that (61,90) confusion is data-intrinsic.}}{34}{table.caption.62}\protected@file@percent }
+\newlabel{tab:per_class_riconv}{{18}{34}{Per-class F1 on the seven hardest classes. RIConv2 geometry-only (RUN1) dramatically outperforms HierGIN-8D on every hard class, despite using no chemical features. This refutes the claim that (61,90) confusion is data-intrinsic}{table.caption.62}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {9.2}Feature Role Summary}{34}{subsection.9.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {18}{\ignorespaces Feature group roles derived from ablation and separability analysis.}}{34}{table.caption.62}\protected@file@percent }
-\newlabel{tab:feature_roles}{{18}{34}{Feature group roles derived from ablation and separability analysis}{table.caption.62}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {9.3}Hierarchical vs.\ Flat GNN}{34}{subsection.9.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Spatial hierarchy.}{34}{section*.64}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Information bottleneck.}{34}{section*.65}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {19}{\ignorespaces Feature group roles. ``HierGIN impact'' = ablation delta. ``Cross-arch'' = what RIConv2 reveals about the signal when extracted by a stronger architecture.}}{35}{table.caption.63}\protected@file@percent }
+\newlabel{tab:feature_roles}{{19}{35}{Feature group roles. ``HierGIN impact'' = ablation delta. ``Cross-arch'' = what RIConv2 reveals about the signal when extracted by a stronger architecture}{table.caption.63}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.4}Why RIConv2 Dominates: Architecture, Not Features}{35}{subsection.9.4}\protected@file@percent }
+\newlabel{sec:discussion:riconv2}{{9.4}{35}{Why RIConv2 Dominates: Architecture, Not Features}{subsection.9.4}{}}
+\@writefile{toc}{\contentsline {paragraph}{Multi-scale ball-query grouping vs.\ single-scale kNN.}{35}{section*.66}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{RI features within groups vs.\ on graph edges.}{35}{section*.67}\protected@file@percent }
 \citation{esm2}
-\@writefile{toc}{\contentsline {paragraph}{Spatial hierarchy.}{35}{section*.63}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Information bottleneck.}{35}{section*.64}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {9.4}Why Point-cloud Methods Underperform}{35}{subsection.9.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {9.5}What Could Push Beyond the Ceiling}{35}{subsection.9.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {9.6}Why RI-GIN Improves over Standard GIN}{35}{subsection.9.6}\protected@file@percent }
-\newlabel{sec:analysis:ri_sep}{{9.6}{35}{Why RI-GIN Improves over Standard GIN}{subsection.9.6}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {18}{\ignorespaces RI edge feature separability analysis (full data in Tables~\ref {tab:ks_ri}--\ref {tab:svm_ri}). \textbf  {Left:} KS statistic per RI dimension — confusable pairs (top three) are near zero across all dimensions; only the control (8,5) separates cleanly via edge length (KS\,=\,0.605). \textbf  {Middle:} SW(RI 5D) is 7--23$\times $ lower than SW(8D node feat) for confusable pairs. \textbf  {Right:} SVM balanced accuracy (5-fold CV) — RI protein statistics match or slightly exceed 8D for (61,90) and (70,56), but (86,14) remains better separated by electrostatics.}}{36}{figure.caption.65}\protected@file@percent }
-\newlabel{fig:ri_sep}{{18}{36}{RI edge feature separability analysis (full data in Tables~\ref {tab:ks_ri}--\ref {tab:svm_ri}). \textbf {Left:} KS statistic per RI dimension — confusable pairs (top three) are near zero across all dimensions; only the control (8,5) separates cleanly via edge length (KS\,=\,0.605). \textbf {Middle:} SW(RI 5D) is 7--23$\times $ lower than SW(8D node feat) for confusable pairs. \textbf {Right:} SVM balanced accuracy (5-fold CV) — RI protein statistics match or slightly exceed 8D for (61,90) and (70,56), but (86,14) remains better separated by electrostatics}{figure.caption.65}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {9.7}Limitations}{36}{subsection.9.7}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {10}Conclusion}{37}{section.10}\protected@file@percent }
-\newlabel{sec:conclusion}{{10}{37}{Conclusion}{section.10}{}}
-\@writefile{toc}{\contentsline {paragraph}{Pipeline.}{37}{section*.66}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Architecture.}{37}{section*.67}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Electrostatic potential is the key signal.}{37}{section*.68}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Dataset ceiling.}{37}{section*.69}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{State of the art.}{37}{section*.70}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Enriched feature datasets.}{37}{section*.71}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Negative results.}{37}{section*.72}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Future work.}{37}{section*.73}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Conclusion.}{36}{section*.68}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.5}Why Point-cloud Methods Underperform}{36}{subsection.9.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.6}What Could Push Beyond the Current Ceiling}{36}{subsection.9.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.7}Why RI-GIN Improves over Standard GIN}{36}{subsection.9.7}\protected@file@percent }
+\newlabel{sec:analysis:ri_sep}{{9.7}{36}{Why RI-GIN Improves over Standard GIN}{subsection.9.7}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {18}{\ignorespaces RI edge feature separability analysis (full data in Tables~\ref {tab:ks_ri}--\ref {tab:svm_ri}). \textbf  {Left:} KS statistic per RI dimension — confusable pairs (top three) are near zero across all dimensions; only the control (8,5) separates cleanly via edge length (KS\,=\,0.605). \textbf  {Middle:} SW(RI 5D) is 7--23$\times $ lower than SW(8D node feat) for confusable pairs. \textbf  {Right:} SVM balanced accuracy (5-fold CV) — RI protein statistics match or slightly exceed 8D for (61,90) and (70,56), but (86,14) remains better separated by electrostatics.}}{37}{figure.caption.69}\protected@file@percent }
+\newlabel{fig:ri_sep}{{18}{37}{RI edge feature separability analysis (full data in Tables~\ref {tab:ks_ri}--\ref {tab:svm_ri}). \textbf {Left:} KS statistic per RI dimension — confusable pairs (top three) are near zero across all dimensions; only the control (8,5) separates cleanly via edge length (KS\,=\,0.605). \textbf {Middle:} SW(RI 5D) is 7--23$\times $ lower than SW(8D node feat) for confusable pairs. \textbf {Right:} SVM balanced accuracy (5-fold CV) — RI protein statistics match or slightly exceed 8D for (61,90) and (70,56), but (86,14) remains better separated by electrostatics}{figure.caption.69}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.8}Limitations}{37}{subsection.9.8}\protected@file@percent }
+\citation{riconv2}
+\citation{riconv2}
+\citation{esm2}
+\@writefile{toc}{\contentsline {section}{\numberline {10}Conclusion}{38}{section.10}\protected@file@percent }
+\newlabel{sec:conclusion}{{10}{38}{Conclusion}{section.10}{}}
+\@writefile{toc}{\contentsline {paragraph}{Pipeline and architecture.}{38}{section*.70}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Within-HierGIN: potential is the dominant signal.}{38}{section*.71}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Architecture gap: geometry is the primary signal.}{38}{section*.72}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{The confusion pairs are architecture-limited.}{38}{section*.73}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Negative results.}{38}{section*.74}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Future work.}{38}{section*.75}\protected@file@percent }
 \bibstyle{plain}
 \bibcite{shrec25}{1}
 \bibcite{gin}{2}
