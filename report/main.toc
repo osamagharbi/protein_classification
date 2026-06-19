@@ -83,22 +83,26 @@
 \contentsline {subsection}{\numberline {8.4}Evaluation Protocol}{30}{subsection.8.4}%
 \contentsline {paragraph}{The 88-class vs.\ 99-class problem.}{30}{section*.56}%
 \contentsline {paragraph}{How we address it.}{31}{section*.57}%
-\contentsline {paragraph}{Why this matters for the geom14d\_raw comparison.}{31}{section*.58}%
 \contentsline {section}{\numberline {9}Analysis and Discussion}{32}{section.9}%
 \contentsline {subsection}{\numberline {9.1}Persistent Confusion Across Models}{32}{subsection.9.1}%
 \contentsline {subsection}{\numberline {9.2}Feature Role Summary}{32}{subsection.9.2}%
 \contentsline {subsection}{\numberline {9.3}Hierarchical vs.\ Flat GNN}{32}{subsection.9.3}%
-\contentsline {paragraph}{Spatial hierarchy.}{33}{section*.60}%
-\contentsline {paragraph}{Information bottleneck.}{33}{section*.61}%
+\contentsline {paragraph}{Spatial hierarchy.}{33}{section*.59}%
+\contentsline {paragraph}{Information bottleneck.}{33}{section*.60}%
 \contentsline {subsection}{\numberline {9.4}Why Point-cloud Methods Underperform}{33}{subsection.9.4}%
 \contentsline {subsection}{\numberline {9.5}What Could Push Beyond the Ceiling}{33}{subsection.9.5}%
-\contentsline {subsection}{\numberline {9.6}Limitations}{33}{subsection.9.6}%
+\contentsline {subsection}{\numberline {9.6}Geometric Separability via RI Edge Features}{33}{subsection.9.6}%
+\contentsline {paragraph}{RI geometry does not separate confusable pairs.}{34}{section*.62}%
+\contentsline {paragraph}{Global size statistics encode class identity.}{34}{section*.63}%
+\contentsline {paragraph}{RI protein-level statistics carry a small orthogonal signal.}{34}{section*.64}%
+\contentsline {paragraph}{Implication for RI-GIN.}{34}{section*.65}%
+\contentsline {subsection}{\numberline {9.7}Limitations}{34}{subsection.9.7}%
 \contentsline {section}{\numberline {10}Conclusion}{35}{section.10}%
-\contentsline {paragraph}{Pipeline.}{35}{section*.62}%
-\contentsline {paragraph}{Architecture.}{35}{section*.63}%
-\contentsline {paragraph}{Electrostatic potential is the key signal.}{35}{section*.64}%
-\contentsline {paragraph}{Dataset ceiling.}{35}{section*.65}%
-\contentsline {paragraph}{State of the art.}{35}{section*.66}%
-\contentsline {paragraph}{Enriched feature datasets.}{35}{section*.67}%
-\contentsline {paragraph}{Negative results.}{35}{section*.68}%
-\contentsline {paragraph}{Future work.}{35}{section*.69}%
+\contentsline {paragraph}{Pipeline.}{35}{section*.67}%
+\contentsline {paragraph}{Architecture.}{35}{section*.68}%
+\contentsline {paragraph}{Electrostatic potential is the key signal.}{35}{section*.69}%
+\contentsline {paragraph}{Dataset ceiling.}{35}{section*.70}%
+\contentsline {paragraph}{State of the art.}{35}{section*.71}%
+\contentsline {paragraph}{Enriched feature datasets.}{36}{section*.72}%
+\contentsline {paragraph}{Negative results.}{36}{section*.73}%
+\contentsline {paragraph}{Future work.}{36}{section*.74}%

@@ -186,41 +186,50 @@
 \@writefile{toc}{\contentsline {section}{\numberline {8}Results and Comparison}{29}{section.8}\protected@file@percent }
 \newlabel{sec:results}{{8}{29}{Results and Comparison}{section.8}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Main Results Table}{29}{subsection.8.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Test set performance comparison (88-class evaluation). HierGIN metrics: macro average over the 88 classes that have $\geq $1 test sample (classes without test samples excluded from the macro denominator). External values reported as published. \textbf  {Bold}: best value per metric column. Primary metrics (Acc, Bal.Acc, Wtd-F1) are listed first.}}{29}{table.caption.53}\protected@file@percent }
-\newlabel{tab:main_results}{{14}{29}{Test set performance comparison (88-class evaluation). HierGIN metrics: macro average over the 88 classes that have $\geq $1 test sample (classes without test samples excluded from the macro denominator). External values reported as published. \textbf {Bold}: best value per metric column. Primary metrics (Acc, Bal.Acc, Wtd-F1) are listed first}{table.caption.53}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Test set performance --- all runs (88-class evaluation). \textbf  {Bold}: best value per metric column. $\dagger $~RI-GIN 14D is running at the time of writing. $\ddagger $~Injection runs use 14D (global norm) features as base. External method metrics are as published.}}{29}{table.caption.53}\protected@file@percent }
+\newlabel{tab:main_results}{{14}{29}{Test set performance --- all runs (88-class evaluation). \textbf {Bold}: best value per metric column. $\dagger $~RI-GIN 14D is running at the time of writing. $\ddagger $~Injection runs use 14D (global norm) features as base. External method metrics are as published}{table.caption.53}{}}
 \@writefile{toc}{\contentsline {paragraph}{Key observations.}{29}{section*.54}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Backbone Comparison}{30}{subsection.8.2}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {17}{\ignorespaces Node backbone ablation: accuracy, balanced accuracy, and macro-F1 for eight backbone types under identical hyperparameters (4D features).}}{30}{figure.caption.55}\protected@file@percent }
-\newlabel{fig:backbone_ablation}{{17}{30}{Node backbone ablation: accuracy, balanced accuracy, and macro-F1 for eight backbone types under identical hyperparameters (4D features)}{figure.caption.55}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {17}{\ignorespaces Node backbone ablation: accuracy, balanced accuracy, and macro-F1 for eight backbone types (4D features, all other hyperparameters fixed).}}{30}{figure.caption.55}\protected@file@percent }
+\newlabel{fig:backbone_ablation}{{17}{30}{Node backbone ablation: accuracy, balanced accuracy, and macro-F1 for eight backbone types (4D features, all other hyperparameters fixed)}{figure.caption.55}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Per-class Analysis}{30}{subsection.8.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {8.4}Evaluation Protocol}{30}{subsection.8.4}\protected@file@percent }
 \newlabel{sec:eval_protocol}{{8.4}{30}{Evaluation Protocol}{subsection.8.4}{}}
 \@writefile{toc}{\contentsline {paragraph}{The 88-class vs.\ 99-class problem.}{30}{section*.56}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{How we address it.}{31}{section*.57}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Why this matters for the geom14d\_raw comparison.}{31}{section*.58}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {9}Analysis and Discussion}{32}{section.9}\protected@file@percent }
 \newlabel{sec:discussion}{{9}{32}{Analysis and Discussion}{section.9}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {9.1}Persistent Confusion Across Models}{32}{subsection.9.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {9.2}Feature Role Summary}{32}{subsection.9.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {15}{\ignorespaces Feature group roles derived from ablation and separability analysis.}}{32}{table.caption.59}\protected@file@percent }
-\newlabel{tab:feature_roles}{{15}{32}{Feature group roles derived from ablation and separability analysis}{table.caption.59}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {15}{\ignorespaces Feature group roles derived from ablation and separability analysis.}}{32}{table.caption.58}\protected@file@percent }
+\newlabel{tab:feature_roles}{{15}{32}{Feature group roles derived from ablation and separability analysis}{table.caption.58}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {9.3}Hierarchical vs.\ Flat GNN}{32}{subsection.9.3}\protected@file@percent }
 \citation{esm2}
-\@writefile{toc}{\contentsline {paragraph}{Spatial hierarchy.}{33}{section*.60}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Information bottleneck.}{33}{section*.61}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Spatial hierarchy.}{33}{section*.59}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Information bottleneck.}{33}{section*.60}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {9.4}Why Point-cloud Methods Underperform}{33}{subsection.9.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {9.5}What Could Push Beyond the Ceiling}{33}{subsection.9.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {9.6}Limitations}{33}{subsection.9.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.6}Geometric Separability via RI Edge Features}{33}{subsection.9.6}\protected@file@percent }
+\newlabel{sec:analysis:ri_sep}{{9.6}{33}{Geometric Separability via RI Edge Features}{subsection.9.6}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {16}{\ignorespaces Separability of RI edge features vs 8D node features. SW measured on pooled edge distributions; SVM on 10D per-protein statistics (5-fold stratified CV).}}{34}{table.caption.61}\protected@file@percent }
+\newlabel{tab:ri_sep}{{16}{34}{Separability of RI edge features vs 8D node features. SW measured on pooled edge distributions; SVM on 10D per-protein statistics (5-fold stratified CV)}{table.caption.61}{}}
+\@writefile{toc}{\contentsline {paragraph}{RI geometry does not separate confusable pairs.}{34}{section*.62}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Global size statistics encode class identity.}{34}{section*.63}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{RI protein-level statistics carry a small orthogonal signal.}{34}{section*.64}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Implication for RI-GIN.}{34}{section*.65}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.7}Limitations}{34}{subsection.9.7}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {18}{\ignorespaces RI edge feature separability analysis. \textbf  {Left:} KS statistic per RI dimension for each pair -- only (8,5) control shows large KS (edge length dimension 0.60). \textbf  {Middle:} SW comparison across feature types -- RI features have far lower SW than 8D node features for confusable pairs. \textbf  {Right:} SVM balanced accuracy (5-fold CV) -- RI features match or marginally exceed 8D node features for three of four pairs, but the 8D advantage on (86,14) confirms electrostatics dominate there.}}{35}{figure.caption.66}\protected@file@percent }
+\newlabel{fig:ri_sep}{{18}{35}{RI edge feature separability analysis. \textbf {Left:} KS statistic per RI dimension for each pair -- only (8,5) control shows large KS (edge length dimension 0.60). \textbf {Middle:} SW comparison across feature types -- RI features have far lower SW than 8D node features for confusable pairs. \textbf {Right:} SVM balanced accuracy (5-fold CV) -- RI features match or marginally exceed 8D node features for three of four pairs, but the 8D advantage on (86,14) confirms electrostatics dominate there}{figure.caption.66}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {10}Conclusion}{35}{section.10}\protected@file@percent }
 \newlabel{sec:conclusion}{{10}{35}{Conclusion}{section.10}{}}
-\@writefile{toc}{\contentsline {paragraph}{Pipeline.}{35}{section*.62}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Architecture.}{35}{section*.63}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Electrostatic potential is the key signal.}{35}{section*.64}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Dataset ceiling.}{35}{section*.65}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{State of the art.}{35}{section*.66}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Enriched feature datasets.}{35}{section*.67}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Negative results.}{35}{section*.68}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Future work.}{35}{section*.69}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Pipeline.}{35}{section*.67}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Architecture.}{35}{section*.68}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Electrostatic potential is the key signal.}{35}{section*.69}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Dataset ceiling.}{35}{section*.70}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{State of the art.}{35}{section*.71}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Enriched feature datasets.}{36}{section*.72}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Negative results.}{36}{section*.73}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Future work.}{36}{section*.74}\protected@file@percent }
 \bibstyle{plain}
 \bibcite{shrec25}{1}
 \bibcite{gin}{2}
