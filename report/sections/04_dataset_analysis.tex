@@ -578,6 +578,142 @@ electrostatic surface chemistry and cannot be resolved by adding geometric
 curvature descriptors.
 
 % ─────────────────────────────────────────────────────────────────
+\subsection{SO(3)-Invariant RI Edge Feature Analysis}
+\label{sec:analysis:ri}
+% ─────────────────────────────────────────────────────────────────
+
+The rotation-invariant (RI) backbone (Section~\ref{sec:arch:rigin}) encodes
+each directed mesh edge as five SO(3)-invariant scalars computed from vertex
+positions and surface normals:
+$[\,\|p_j{-}p_i\|,\; \langle n_i, \hat{e}\rangle,\;
+   \langle n_j, \hat{e}\rangle,\;
+   \langle n_i, n_j\rangle,\;
+   \langle (n_j{\times}n_i), \hat{e}\rangle\,]$.
+To determine whether these edge-level geometric features provide \emph{additional}
+discriminating signal beyond the 8D node features, we precompute them for all
+9\,244 training graphs (saved as \texttt{ri\_feat}~$[E_\text{mesh},5]$ in the
+\texttt{ssl\_graphs\_1k\_geom\_enriched\_ri} dataset) and repeat the separability
+analysis at the edge level.
+
+\subsubsection{KS Test on RI Edge Scalars}
+\label{sec:analysis:ri:ks}
+
+We pool all directed edge values across proteins in each class and compute the
+two-sample KS statistic per RI dimension.
+
+\begin{table}[ht]
+  \centering
+  \caption{KS statistics for the five RI edge dimensions (edge-level, 1k SSL
+           graphs).
+           For confusable pairs, all five RI dimensions are near zero
+           ($\leq$0.041), dominated by edge length for (70,\,56) and (86,\,14).
+           The control (8,\,5) pair is entirely separated by edge length
+           (KS\,=\,0.605), reflecting different protein sizes.}
+  \label{tab:ks_ri}
+  \begin{tabular}{lrrrrr}
+    \toprule
+    \textbf{Pair}
+      & $\|p_j{-}p_i\|$
+      & $\langle n_i,\hat{e}\rangle$
+      & $\langle n_j,\hat{e}\rangle$
+      & $\langle n_i,n_j\rangle$
+      & $\langle (n_j{\times}n_i),\hat{e}\rangle$ \\
+    \midrule
+    (61,\,90) conf. & 0.004 & 0.004 & 0.002 & 0.004 & 0.002 \\
+    (70,\,56) conf. & 0.041 & 0.003 & 0.002 & 0.002 & 0.001 \\
+    (86,\,14) conf. & 0.033 & 0.007 & 0.007 & 0.012 & 0.003 \\
+    (8,\,5) control & \textbf{0.605} & 0.052 & 0.049 & 0.024 & 0.013 \\
+    \midrule
+    Potential (ref.) & \multicolumn{5}{l}{0.031\,(61,90) \;/\; 0.192\,(70,56) \;/\; 0.250\,(86,14)} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+All five RI dimensions have KS $\leq$0.041 for the three confusable pairs
+--- none surpasses the Potential KS for any confusable pair.
+The edge-length dimension dominates (70,\,56) and (86,\,14) with KS\,=\,0.041
+and 0.033 respectively, while for the hardest pair (61,\,90) all five dimensions
+are near zero ($\leq$0.004), the lowest of any feature type studied.
+This is the strongest evidence that (61,\,90) families have essentially identical
+surface geometry.
+
+\subsubsection{Sliced Wasserstein on RI Features}
+
+\begin{table}[ht]
+  \centering
+  \caption{Sliced Wasserstein distances for RI edge features vs the 8D node
+           feature baseline.
+           SW(dist) isolates the edge-length signal;
+           SW(4 angles) covers the four normal-based invariants.
+           For comparison, SW(8D feat) is reproduced from
+           Table~\ref{tab:graph_sw}.}
+  \label{tab:sw_ri}
+  \begin{tabular}{lcrrrrr}
+    \toprule
+    \textbf{Pair} & \textbf{Type}
+      & \textbf{SW(8D feat)} & \textbf{SW(RI 5D)}
+      & \textbf{SW(dist)} & \textbf{SW(4 angles)} \\
+    \midrule
+    (61,\,90) & confusable & 0.027 & 0.004 & 0.000 & 0.005 \\
+    (70,\,56) & confusable & 0.104 & 0.003 & 0.002 & 0.004 \\
+    (86,\,14) & confusable & 0.140 & 0.006 & 0.001 & 0.006 \\
+    (8,\,5)   & control    & 0.061 & 0.029 & 0.025 & 0.032 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+SW(RI 5D) is 7--23$\times$ lower than SW(8D feat) for every confusable pair.
+For (61,\,90), SW(RI 5D)\,=\,0.004 is the \emph{lowest} SW value observed
+across all feature sets studied --- lower than curvature (0.018), lower than
+geometric features (0.016), and far below the electrostatic baseline (0.027).
+The angular RI dimensions (SW\,=\,0.000--0.006) add virtually no additional
+discrimination beyond the edge-length dimension alone.
+
+\subsubsection{Protein-level SVM on RI Statistics}
+\label{sec:analysis:ri:svm}
+
+\begin{table}[ht]
+  \centering
+  \caption{SVM balanced accuracy on 10D per-protein RI statistics
+           (mean\,+\,std per RI dimension; 5-fold stratified CV).
+           Comparison to the 8D-node-feature baseline (32D statistics, same CV).}
+  \label{tab:svm_ri}
+  \begin{tabular}{lcrr}
+    \toprule
+    \textbf{Pair} & \textbf{Type} & \textbf{SVM(8D feat)} & \textbf{SVM(RI stats)} \\
+    \midrule
+    (61,\,90) & confusable & 0.543 & 0.597 \;($+$0.054) \\
+    (70,\,56) & confusable & 0.573 & 0.605 \;($+$0.032) \\
+    (86,\,14) & confusable & 0.665 & 0.631 \;($-$0.034) \\
+    (8,\,5)   & control    & 0.660 & 1.000 \;($+$0.340) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The protein-level SVM (using per-protein mean+std of each RI dimension as
+descriptor) shows a split result.
+For (61,\,90) and (70,\,56), SVM(RI) modestly exceeds SVM(8D) by $+$5\,pp and
+$+$3\,pp --- the global geometric statistics carry a small orthogonal signal not
+present in electrostatics.
+For (86,\,14), SVM(RI) is $-$3.4\,pp lower, confirming that for this pair the
+electrostatic Potential is more discriminating even at the protein-statistic level.
+For the control (8,\,5), perfect separation follows directly from the edge-length
+dimension (different protein sizes), while the 8D node-feature SVM reaches only
+0.660 on this pair because node features such as normals and coordinates are
+\textit{not} scaled by protein size.
+
+\paragraph{Key finding.}
+RI edge features are not the missing discriminating signal for confusable pairs.
+Their SW is universally lower than electrostatic node features, confirming
+that the confusion between classes 61/90, 70/56, and 86/14 is chemical
+(similar charge distributions) rather than geometric (similar surface shape).
+The moderate SVM gains for (61,\,90) and (70,\,56) represent weak complementary
+information but do not approach the separability provided by Potential.
+The improvement from the RI-GIN model ($+$0.2\,pp macro-F1) is therefore not
+due to a richer feature space but to a more consistent learned representation
+(see Section~\ref{sec:analysis:ri_sep}).
+
+% ─────────────────────────────────────────────────────────────────
 \subsection{Summary}
 \label{sec:analysis:summary}
 % ─────────────────────────────────────────────────────────────────
@@ -608,6 +744,11 @@ curvature descriptors.
                             SW(4D curv) $\leq$ 0.041; SVM delta $\leq+$0.02.
                             4-feature curvature does not help beyond
                             electrostatics without broader geometric context. \\[3pt]
+    RI edge geometry adds nothing at edge level & KS $\leq$0.041 for all 5 RI
+                            dims across confusable pairs; SW(RI 5D) is 7--23$\times$
+                            lower than SW(8D feat).
+                            RI-GIN gain ($+$0.2\,pp) comes from invariant
+                            representation, not richer geometry. \\[3pt]
     Geom SVM gain transfers to GNN & HierGIN-14D (global norm) scores
                             macro-F1\,0.808 vs.\ 0.798 for 8D-only.
                             Per-graph z-scoring kills scale signal (macro-F1
@@ -615,7 +756,9 @@ curvature descriptors.
                             for the geometric benefit to manifest. \\[3pt]
     (61,\,90) is near-irreducible & SVM $\approx$ 0.56, SW(Pot) $=$ 0.088,
                             KS(Pot) $=$ 0.031 --- all at full VTK resolution.
-                            All models will confuse this pair. \\[3pt]
+                            RI SW(5D) $=$ 0.004 is the lowest of all feature
+                            sets, confirming surface geometry is essentially
+                            identical for these two families. \\[3pt]
     1k subsampling is sufficient & $\Delta\text{SVM} \leq$ 0.034 for confusable
                             pairs; pair ranking preserved.
                             FPS-1k is a valid approximation. \\

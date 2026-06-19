@@ -100,136 +100,144 @@
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {4.5.2}Sliced Wasserstein on Curvature}{16}{subsubsection.4.5.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {4.5.3}Spatial Autocorrelation of Curvature}{16}{subsubsection.4.5.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {4.5.4}Effect on Protein-level Classification}{16}{subsubsection.4.5.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Summary}{16}{subsection.4.6}\protected@file@percent }
-\newlabel{sec:analysis:summary}{{4.6}{16}{Summary}{subsection.4.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}SO(3)-Invariant RI Edge Feature Analysis}{16}{subsection.4.6}\protected@file@percent }
+\newlabel{sec:analysis:ri}{{4.6}{16}{SO(3)-Invariant RI Edge Feature Analysis}{subsection.4.6}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.6.1}KS Test on RI Edge Scalars}{17}{subsubsection.4.6.1}\protected@file@percent }
+\newlabel{sec:analysis:ri:ks}{{4.6.1}{17}{KS Test on RI Edge Scalars}{subsubsection.4.6.1}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces KS statistics for the five RI edge dimensions (edge-level, 1k SSL graphs). For confusable pairs, all five RI dimensions are near zero ($\leq $0.041), dominated by edge length for (70,\,56) and (86,\,14). The control (8,\,5) pair is entirely separated by edge length (KS\,=\,0.605), reflecting different protein sizes.}}{17}{table.caption.31}\protected@file@percent }
+\newlabel{tab:ks_ri}{{8}{17}{KS statistics for the five RI edge dimensions (edge-level, 1k SSL graphs). For confusable pairs, all five RI dimensions are near zero ($\leq $0.041), dominated by edge length for (70,\,56) and (86,\,14). The control (8,\,5) pair is entirely separated by edge length (KS\,=\,0.605), reflecting different protein sizes}{table.caption.31}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.6.2}Sliced Wasserstein on RI Features}{17}{subsubsection.4.6.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces Sliced Wasserstein distances for RI edge features vs the 8D node feature baseline. SW(dist) isolates the edge-length signal; SW(4 angles) covers the four normal-based invariants. For comparison, SW(8D feat) is reproduced from Table~\ref {tab:graph_sw}.}}{17}{table.caption.32}\protected@file@percent }
+\newlabel{tab:sw_ri}{{9}{17}{Sliced Wasserstein distances for RI edge features vs the 8D node feature baseline. SW(dist) isolates the edge-length signal; SW(4 angles) covers the four normal-based invariants. For comparison, SW(8D feat) is reproduced from Table~\ref {tab:graph_sw}}{table.caption.32}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.6.3}Protein-level SVM on RI Statistics}{17}{subsubsection.4.6.3}\protected@file@percent }
+\newlabel{sec:analysis:ri:svm}{{4.6.3}{17}{Protein-level SVM on RI Statistics}{subsubsection.4.6.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces SVM balanced accuracy on 10D per-protein RI statistics (mean\,+\,std per RI dimension; 5-fold stratified CV). Comparison to the 8D-node-feature baseline (32D statistics, same CV).}}{18}{table.caption.33}\protected@file@percent }
+\newlabel{tab:svm_ri}{{10}{18}{SVM balanced accuracy on 10D per-protein RI statistics (mean\,+\,std per RI dimension; 5-fold stratified CV). Comparison to the 8D-node-feature baseline (32D statistics, same CV)}{table.caption.33}{}}
+\@writefile{toc}{\contentsline {paragraph}{Key finding.}{18}{section*.34}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.7}Summary}{19}{subsection.4.7}\protected@file@percent }
+\newlabel{sec:analysis:summary}{{4.7}{19}{Summary}{subsection.4.7}{}}
 \citation{gin}
 \citation{gin}
-\@writefile{toc}{\contentsline {section}{\numberline {5}Model Architectures}{18}{section.5}\protected@file@percent }
-\newlabel{sec:arch}{{5}{18}{Model Architectures}{section.5}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Flat GNN Baseline}{18}{subsection.5.1}\protected@file@percent }
-\newlabel{sec:arch:flat}{{5.1}{18}{Flat GNN Baseline}{subsection.5.1}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Hierarchical GNN: HierGIN}{18}{subsection.5.2}\protected@file@percent }
-\newlabel{sec:arch:hier}{{5.2}{18}{Hierarchical GNN: HierGIN}{subsection.5.2}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces HierGIN architecture. A node-level GIN processes 1\,000-node surface graphs; a geodesic Voronoi pooling layer coarsens to 64 patch nodes; a patch-level GIN refines patch representations; global max readout feeds an MLP classifier.}}{18}{figure.caption.31}\protected@file@percent }
-\newlabel{fig:arch}{{10}{18}{HierGIN architecture. A node-level GIN processes 1\,000-node surface graphs; a geodesic Voronoi pooling layer coarsens to 64 patch nodes; a patch-level GIN refines patch representations; global max readout feeds an MLP classifier}{figure.caption.31}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.1}Node-level GIN}{18}{subsubsection.5.2.1}\protected@file@percent }
-\newlabel{eq:gin}{{2}{18}{Node-level GIN}{equation.5.2}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.2}Geodesic Voronoi Patch Pooling}{18}{subsubsection.5.2.2}\protected@file@percent }
-\newlabel{sec:arch:pool}{{5.2.2}{18}{Geodesic Voronoi Patch Pooling}{subsubsection.5.2.2}{}}
-\newlabel{eq:attn_pool}{{3}{18}{Geodesic Voronoi Patch Pooling}{equation.5.3}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.3}Patch-level GIN}{19}{subsubsection.5.2.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4}Readout and Classification}{19}{subsubsection.5.2.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Node Backbone Variants}{19}{subsection.5.3}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Node backbone ablation (4D features, h=512, proper eval over 88 classes). * PNA evaluated from training-time metrics due to inference crash (missing delta parameter); indicated values are slightly lower bound.}}{19}{table.caption.32}\protected@file@percent }
-\newlabel{tab:backbones}{{8}{19}{Node backbone ablation (4D features, h=512, proper eval over 88 classes). * PNA evaluated from training-time metrics due to inference crash (missing delta parameter); indicated values are slightly lower bound}{table.caption.32}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces Validation macro-F1 (left) and training macro-F1 (right) over 80 epochs for the backbone ablation. All eight backbones use 4D features and are otherwise identical.}}{19}{figure.caption.33}\protected@file@percent }
-\newlabel{fig:training_curves_all}{{11}{19}{Validation macro-F1 (left) and training macro-F1 (right) over 80 epochs for the backbone ablation. All eight backbones use 4D features and are otherwise identical}{figure.caption.33}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Model Architectures}{20}{section.5}\protected@file@percent }
+\newlabel{sec:arch}{{5}{20}{Model Architectures}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Flat GNN Baseline}{20}{subsection.5.1}\protected@file@percent }
+\newlabel{sec:arch:flat}{{5.1}{20}{Flat GNN Baseline}{subsection.5.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Hierarchical GNN: HierGIN}{20}{subsection.5.2}\protected@file@percent }
+\newlabel{sec:arch:hier}{{5.2}{20}{Hierarchical GNN: HierGIN}{subsection.5.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces HierGIN architecture. A node-level GIN processes 1\,000-node surface graphs; a geodesic Voronoi pooling layer coarsens to 64 patch nodes; a patch-level GIN refines patch representations; global max readout feeds an MLP classifier.}}{20}{figure.caption.35}\protected@file@percent }
+\newlabel{fig:arch}{{10}{20}{HierGIN architecture. A node-level GIN processes 1\,000-node surface graphs; a geodesic Voronoi pooling layer coarsens to 64 patch nodes; a patch-level GIN refines patch representations; global max readout feeds an MLP classifier}{figure.caption.35}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.1}Node-level GIN}{20}{subsubsection.5.2.1}\protected@file@percent }
+\newlabel{eq:gin}{{2}{20}{Node-level GIN}{equation.5.2}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.2}Geodesic Voronoi Patch Pooling}{20}{subsubsection.5.2.2}\protected@file@percent }
+\newlabel{sec:arch:pool}{{5.2.2}{20}{Geodesic Voronoi Patch Pooling}{subsubsection.5.2.2}{}}
+\newlabel{eq:attn_pool}{{3}{20}{Geodesic Voronoi Patch Pooling}{equation.5.3}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.3}Patch-level GIN}{21}{subsubsection.5.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4}Readout and Classification}{21}{subsubsection.5.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Node Backbone Variants}{21}{subsection.5.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces Node backbone ablation (4D features, h=512, proper eval over 88 classes). * PNA evaluated from training-time metrics due to inference crash (missing delta parameter); indicated values are slightly lower bound.}}{21}{table.caption.36}\protected@file@percent }
+\newlabel{tab:backbones}{{11}{21}{Node backbone ablation (4D features, h=512, proper eval over 88 classes). * PNA evaluated from training-time metrics due to inference crash (missing delta parameter); indicated values are slightly lower bound}{table.caption.36}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces Validation macro-F1 (left) and training macro-F1 (right) over 80 epochs for the backbone ablation. All eight backbones use 4D features and are otherwise identical.}}{21}{figure.caption.37}\protected@file@percent }
+\newlabel{fig:training_curves_all}{{11}{21}{Validation macro-F1 (left) and training macro-F1 (right) over 80 epochs for the backbone ablation. All eight backbones use 4D features and are otherwise identical}{figure.caption.37}{}}
 \citation{riconv2}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Rotation-Invariant Node Backbone: RI-GIN}{20}{subsection.5.4}\protected@file@percent }
-\newlabel{sec:arch:rigin}{{5.4}{20}{Rotation-Invariant Node Backbone: RI-GIN}{subsection.5.4}{}}
-\newlabel{eq:ri_scalars}{{4}{20}{Rotation-Invariant Node Backbone: RI-GIN}{equation.5.4}{}}
-\newlabel{eq:ri_msg}{{5}{20}{Rotation-Invariant Node Backbone: RI-GIN}{equation.5.5}{}}
-\@writefile{toc}{\contentsline {paragraph}{Computational note.}{20}{section*.34}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}VTK Mesh Visualisation}{20}{subsection.5.5}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {12}{\ignorespaces Protein surface meshes for the three confusable class pairs (N=5 per class). Colour: blue = negative potential, red = positive potential. Classes 61 and 90 (top pair) show near-identical surface topologies and charge patterns, explaining their near-inseparability.}}{21}{figure.caption.35}\protected@file@percent }
-\newlabel{fig:vtk}{{12}{21}{Protein surface meshes for the three confusable class pairs (N=5 per class). Colour: blue = negative potential, red = positive potential. Classes 61 and 90 (top pair) show near-identical surface topologies and charge patterns, explaining their near-inseparability}{figure.caption.35}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {6}Training Setup}{21}{section.6}\protected@file@percent }
-\newlabel{sec:training}{{6}{21}{Training Setup}{section.6}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Cosine Annealing with Warmup}{21}{subsection.6.1}\protected@file@percent }
-\newlabel{eq:lr_schedule}{{6}{21}{Cosine Annealing with Warmup}{equation.6.6}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces HierGIN training hyperparameters (best run: HierGIN-8D).}}{22}{table.caption.36}\protected@file@percent }
-\newlabel{tab:hyperparams}{{9}{22}{HierGIN training hyperparameters (best run: HierGIN-8D)}{table.caption.36}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Class Weighting}{22}{subsection.6.2}\protected@file@percent }
-\newlabel{eq:class_weight}{{7}{22}{Class Weighting}{equation.6.7}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Early Stopping}{22}{subsection.6.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Validation Split}{23}{subsection.6.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {7}Ablation Studies}{24}{section.7}\protected@file@percent }
-\newlabel{sec:ablation}{{7}{24}{Ablation Studies}{section.7}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Feature Mode Ablation}{24}{subsection.7.1}\protected@file@percent }
-\newlabel{sec:ablation:features}{{7.1}{24}{Feature Mode Ablation}{subsection.7.1}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces Feature mode definitions. Dimension counts the entries of $\mathbf  {x}_i$ fed to the node GIN. All 8D indices: [0]=Potential\_norm, [1]=NormPot\_norm, [2--4]=$(n_x,n_y,n_z)$, [5--7]=$(x,y,z)_\text  {ssl}$.}}{24}{table.caption.37}\protected@file@percent }
-\newlabel{tab:feature_modes}{{10}{24}{Feature mode definitions. Dimension counts the entries of $\mathbf {x}_i$ fed to the node GIN. All 8D indices: [0]=Potential\_norm, [1]=NormPot\_norm, [2--4]=$(n_x,n_y,n_z)$, [5--7]=$(x,y,z)_\text {ssl}$}{table.caption.37}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces Feature ablation test metrics (HierGIN h=512, eval over 88 classes). Best values in bold.}}{24}{table.caption.38}\protected@file@percent }
-\newlabel{tab:ablation_metrics}{{11}{24}{Feature ablation test metrics (HierGIN h=512, eval over 88 classes). Best values in bold}{table.caption.38}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {13}{\ignorespaces Left: macro-F1 of all feature configurations and external methods. Right: full metric comparison across the five ablation configs. The 8D model outperforms all single-feature subsets.}}{24}{figure.caption.39}\protected@file@percent }
-\newlabel{fig:ablation_summary}{{13}{24}{Left: macro-F1 of all feature configurations and external methods. Right: full metric comparison across the five ablation configs. The 8D model outperforms all single-feature subsets}{figure.caption.39}{}}
-\@writefile{toc}{\contentsline {paragraph}{Findings.}{24}{section*.40}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {14}{\ignorespaces Radar chart: four metrics across five feature configurations. The 8D polygon (blue) is uniformly larger; the 6D and 7D-no-Pot polygons collapse on the balanced accuracy axis, reflecting their inability to handle rare classes.}}{25}{figure.caption.41}\protected@file@percent }
-\newlabel{fig:radar}{{14}{25}{Radar chart: four metrics across five feature configurations. The 8D polygon (blue) is uniformly larger; the 6D and 7D-no-Pot polygons collapse on the balanced accuracy axis, reflecting their inability to handle rare classes}{figure.caption.41}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Patch Count Ablation}{25}{subsection.7.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {12}{\ignorespaces Per-class F1 on hard/confusable classes for each feature configuration.}}{26}{table.caption.42}\protected@file@percent }
-\newlabel{tab:per_class_f1}{{12}{26}{Per-class F1 on hard/confusable classes for each feature configuration}{table.caption.42}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {15}{\ignorespaces Per-class F1 for the seven hardest classes across all five feature configurations. Class\,61 shows the largest variance across configurations, benefitting most from NormalPotential. Class\,80 is effectively unlearnable with 6D features.}}{26}{figure.caption.43}\protected@file@percent }
-\newlabel{fig:per_class}{{15}{26}{Per-class F1 for the seven hardest classes across all five feature configurations. Class\,61 shows the largest variance across configurations, benefitting most from NormalPotential. Class\,80 is effectively unlearnable with 6D features}{figure.caption.43}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Hidden Dimension}{26}{subsection.7.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Node GIN Depth}{26}{subsection.7.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}LR Schedule}{26}{subsection.7.5}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {16}{\ignorespaces Validation training dynamics for the five feature ablation runs. Dashed lines: configurations without Potential (7D-no-Pot, 6D) converge to a much lower ceiling.}}{27}{figure.caption.44}\protected@file@percent }
-\newlabel{fig:training_curves_feat}{{16}{27}{Validation training dynamics for the five feature ablation runs. Dashed lines: configurations without Potential (7D-no-Pot, 6D) converge to a much lower ceiling}{figure.caption.44}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.6}Random Walk Positional Encoding}{27}{subsection.7.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.7}Patch-level Scalar Re-injection}{27}{subsection.7.7}\protected@file@percent }
-\newlabel{sec:ablation:patch_inject}{{7.7}{27}{Patch-level Scalar Re-injection}{subsection.7.7}{}}
-\@writefile{toc}{\contentsline {paragraph}{Motivation.}{27}{section*.45}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Experiments.}{27}{section*.46}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Findings.}{27}{section*.47}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.8}Rotation-Invariant Node Backbone (RI-GIN)}{28}{subsection.7.8}\protected@file@percent }
-\newlabel{sec:ablation:rigin}{{7.8}{28}{Rotation-Invariant Node Backbone (RI-GIN)}{subsection.7.8}{}}
-\@writefile{toc}{\contentsline {paragraph}{Motivation.}{28}{section*.48}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Implementation.}{28}{section*.49}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Results.}{28}{section*.50}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {13}{\ignorespaces RI-GIN vs.\ standard GIN on the same feature sets (88-class eval). RI-GIN results pending.}}{28}{table.caption.51}\protected@file@percent }
-\newlabel{tab:rigin}{{13}{28}{RI-GIN vs.\ standard GIN on the same feature sets (88-class eval). RI-GIN results pending}{table.caption.51}{}}
-\@writefile{toc}{\contentsline {paragraph}{Memory constraint.}{28}{section*.52}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Rotation-Invariant Node Backbone: RI-GIN}{22}{subsection.5.4}\protected@file@percent }
+\newlabel{sec:arch:rigin}{{5.4}{22}{Rotation-Invariant Node Backbone: RI-GIN}{subsection.5.4}{}}
+\newlabel{eq:ri_scalars}{{4}{22}{Rotation-Invariant Node Backbone: RI-GIN}{equation.5.4}{}}
+\newlabel{eq:ri_msg}{{5}{22}{Rotation-Invariant Node Backbone: RI-GIN}{equation.5.5}{}}
+\@writefile{toc}{\contentsline {paragraph}{Computational note.}{22}{section*.38}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}VTK Mesh Visualisation}{22}{subsection.5.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {12}{\ignorespaces Protein surface meshes for the three confusable class pairs (N=5 per class). Colour: blue = negative potential, red = positive potential. Classes 61 and 90 (top pair) show near-identical surface topologies and charge patterns, explaining their near-inseparability.}}{23}{figure.caption.39}\protected@file@percent }
+\newlabel{fig:vtk}{{12}{23}{Protein surface meshes for the three confusable class pairs (N=5 per class). Colour: blue = negative potential, red = positive potential. Classes 61 and 90 (top pair) show near-identical surface topologies and charge patterns, explaining their near-inseparability}{figure.caption.39}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Training Setup}{23}{section.6}\protected@file@percent }
+\newlabel{sec:training}{{6}{23}{Training Setup}{section.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Cosine Annealing with Warmup}{23}{subsection.6.1}\protected@file@percent }
+\newlabel{eq:lr_schedule}{{6}{23}{Cosine Annealing with Warmup}{equation.6.6}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {12}{\ignorespaces HierGIN training hyperparameters (best run: HierGIN-8D).}}{24}{table.caption.40}\protected@file@percent }
+\newlabel{tab:hyperparams}{{12}{24}{HierGIN training hyperparameters (best run: HierGIN-8D)}{table.caption.40}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Class Weighting}{24}{subsection.6.2}\protected@file@percent }
+\newlabel{eq:class_weight}{{7}{24}{Class Weighting}{equation.6.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Early Stopping}{24}{subsection.6.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Validation Split}{25}{subsection.6.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Ablation Studies}{26}{section.7}\protected@file@percent }
+\newlabel{sec:ablation}{{7}{26}{Ablation Studies}{section.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Feature Mode Ablation}{26}{subsection.7.1}\protected@file@percent }
+\newlabel{sec:ablation:features}{{7.1}{26}{Feature Mode Ablation}{subsection.7.1}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {13}{\ignorespaces Feature mode definitions. Dimension counts the entries of $\mathbf  {x}_i$ fed to the node GIN. All 8D indices: [0]=Potential\_norm, [1]=NormPot\_norm, [2--4]=$(n_x,n_y,n_z)$, [5--7]=$(x,y,z)_\text  {ssl}$.}}{26}{table.caption.41}\protected@file@percent }
+\newlabel{tab:feature_modes}{{13}{26}{Feature mode definitions. Dimension counts the entries of $\mathbf {x}_i$ fed to the node GIN. All 8D indices: [0]=Potential\_norm, [1]=NormPot\_norm, [2--4]=$(n_x,n_y,n_z)$, [5--7]=$(x,y,z)_\text {ssl}$}{table.caption.41}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Feature ablation test metrics (HierGIN h=512, eval over 88 classes). Best values in bold.}}{26}{table.caption.42}\protected@file@percent }
+\newlabel{tab:ablation_metrics}{{14}{26}{Feature ablation test metrics (HierGIN h=512, eval over 88 classes). Best values in bold}{table.caption.42}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {13}{\ignorespaces Left: macro-F1 of all feature configurations and external methods. Right: full metric comparison across the five ablation configs. The 8D model outperforms all single-feature subsets.}}{26}{figure.caption.43}\protected@file@percent }
+\newlabel{fig:ablation_summary}{{13}{26}{Left: macro-F1 of all feature configurations and external methods. Right: full metric comparison across the five ablation configs. The 8D model outperforms all single-feature subsets}{figure.caption.43}{}}
+\@writefile{toc}{\contentsline {paragraph}{Findings.}{26}{section*.44}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {14}{\ignorespaces Radar chart: four metrics across five feature configurations. The 8D polygon (blue) is uniformly larger; the 6D and 7D-no-Pot polygons collapse on the balanced accuracy axis, reflecting their inability to handle rare classes.}}{27}{figure.caption.45}\protected@file@percent }
+\newlabel{fig:radar}{{14}{27}{Radar chart: four metrics across five feature configurations. The 8D polygon (blue) is uniformly larger; the 6D and 7D-no-Pot polygons collapse on the balanced accuracy axis, reflecting their inability to handle rare classes}{figure.caption.45}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Patch Count Ablation}{27}{subsection.7.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {15}{\ignorespaces Per-class F1 on hard/confusable classes for each feature configuration.}}{28}{table.caption.46}\protected@file@percent }
+\newlabel{tab:per_class_f1}{{15}{28}{Per-class F1 on hard/confusable classes for each feature configuration}{table.caption.46}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {15}{\ignorespaces Per-class F1 for the seven hardest classes across all five feature configurations. Class\,61 shows the largest variance across configurations, benefitting most from NormalPotential. Class\,80 is effectively unlearnable with 6D features.}}{28}{figure.caption.47}\protected@file@percent }
+\newlabel{fig:per_class}{{15}{28}{Per-class F1 for the seven hardest classes across all five feature configurations. Class\,61 shows the largest variance across configurations, benefitting most from NormalPotential. Class\,80 is effectively unlearnable with 6D features}{figure.caption.47}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Hidden Dimension}{28}{subsection.7.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Node GIN Depth}{28}{subsection.7.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}LR Schedule}{28}{subsection.7.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {16}{\ignorespaces Validation training dynamics for the five feature ablation runs. Dashed lines: configurations without Potential (7D-no-Pot, 6D) converge to a much lower ceiling.}}{29}{figure.caption.48}\protected@file@percent }
+\newlabel{fig:training_curves_feat}{{16}{29}{Validation training dynamics for the five feature ablation runs. Dashed lines: configurations without Potential (7D-no-Pot, 6D) converge to a much lower ceiling}{figure.caption.48}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.6}Random Walk Positional Encoding}{29}{subsection.7.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.7}Patch-level Scalar Re-injection}{29}{subsection.7.7}\protected@file@percent }
+\newlabel{sec:ablation:patch_inject}{{7.7}{29}{Patch-level Scalar Re-injection}{subsection.7.7}{}}
+\@writefile{toc}{\contentsline {paragraph}{Motivation.}{29}{section*.49}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Experiments.}{29}{section*.50}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Findings.}{29}{section*.51}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.8}Rotation-Invariant Node Backbone (RI-GIN)}{30}{subsection.7.8}\protected@file@percent }
+\newlabel{sec:ablation:rigin}{{7.8}{30}{Rotation-Invariant Node Backbone (RI-GIN)}{subsection.7.8}{}}
+\@writefile{toc}{\contentsline {paragraph}{Motivation.}{30}{section*.52}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Implementation.}{30}{section*.53}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Results.}{30}{section*.54}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {16}{\ignorespaces RI-GIN vs.\ standard GIN on the same feature sets (88-class eval). RI-GIN results pending.}}{30}{table.caption.55}\protected@file@percent }
+\newlabel{tab:rigin}{{16}{30}{RI-GIN vs.\ standard GIN on the same feature sets (88-class eval). RI-GIN results pending}{table.caption.55}{}}
+\@writefile{toc}{\contentsline {paragraph}{Memory constraint.}{30}{section*.56}\protected@file@percent }
 \citation{shrec25}
 \citation{mamba3d}
 \citation{pointmamba}
-\@writefile{toc}{\contentsline {section}{\numberline {8}Results and Comparison}{29}{section.8}\protected@file@percent }
-\newlabel{sec:results}{{8}{29}{Results and Comparison}{section.8}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Main Results Table}{29}{subsection.8.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Test set performance --- all runs (88-class evaluation). \textbf  {Bold}: best value per metric column. $\dagger $~RI-GIN 14D is running at the time of writing. $\ddagger $~Injection runs use 14D (global norm) features as base. External method metrics are as published.}}{29}{table.caption.53}\protected@file@percent }
-\newlabel{tab:main_results}{{14}{29}{Test set performance --- all runs (88-class evaluation). \textbf {Bold}: best value per metric column. $\dagger $~RI-GIN 14D is running at the time of writing. $\ddagger $~Injection runs use 14D (global norm) features as base. External method metrics are as published}{table.caption.53}{}}
-\@writefile{toc}{\contentsline {paragraph}{Key observations.}{29}{section*.54}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Backbone Comparison}{30}{subsection.8.2}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {17}{\ignorespaces Node backbone ablation: accuracy, balanced accuracy, and macro-F1 for eight backbone types (4D features, all other hyperparameters fixed).}}{30}{figure.caption.55}\protected@file@percent }
-\newlabel{fig:backbone_ablation}{{17}{30}{Node backbone ablation: accuracy, balanced accuracy, and macro-F1 for eight backbone types (4D features, all other hyperparameters fixed)}{figure.caption.55}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Per-class Analysis}{30}{subsection.8.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.4}Evaluation Protocol}{30}{subsection.8.4}\protected@file@percent }
-\newlabel{sec:eval_protocol}{{8.4}{30}{Evaluation Protocol}{subsection.8.4}{}}
-\@writefile{toc}{\contentsline {paragraph}{The 88-class vs.\ 99-class problem.}{30}{section*.56}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{How we address it.}{31}{section*.57}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {9}Analysis and Discussion}{32}{section.9}\protected@file@percent }
-\newlabel{sec:discussion}{{9}{32}{Analysis and Discussion}{section.9}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {9.1}Persistent Confusion Across Models}{32}{subsection.9.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {9.2}Feature Role Summary}{32}{subsection.9.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {15}{\ignorespaces Feature group roles derived from ablation and separability analysis.}}{32}{table.caption.58}\protected@file@percent }
-\newlabel{tab:feature_roles}{{15}{32}{Feature group roles derived from ablation and separability analysis}{table.caption.58}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {9.3}Hierarchical vs.\ Flat GNN}{32}{subsection.9.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {8}Results and Comparison}{31}{section.8}\protected@file@percent }
+\newlabel{sec:results}{{8}{31}{Results and Comparison}{section.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Main Results Table}{31}{subsection.8.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {17}{\ignorespaces Test set performance --- all runs (88-class evaluation). \textbf  {Bold}: best value per metric column. $\dagger $~RI-GIN 14D is running at the time of writing. $\ddagger $~Injection runs use 14D (global norm) features as base. External method metrics are as published.}}{31}{table.caption.57}\protected@file@percent }
+\newlabel{tab:main_results}{{17}{31}{Test set performance --- all runs (88-class evaluation). \textbf {Bold}: best value per metric column. $\dagger $~RI-GIN 14D is running at the time of writing. $\ddagger $~Injection runs use 14D (global norm) features as base. External method metrics are as published}{table.caption.57}{}}
+\@writefile{toc}{\contentsline {paragraph}{Key observations.}{31}{section*.58}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Backbone Comparison}{32}{subsection.8.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {17}{\ignorespaces Node backbone ablation: accuracy, balanced accuracy, and macro-F1 for eight backbone types (4D features, all other hyperparameters fixed).}}{32}{figure.caption.59}\protected@file@percent }
+\newlabel{fig:backbone_ablation}{{17}{32}{Node backbone ablation: accuracy, balanced accuracy, and macro-F1 for eight backbone types (4D features, all other hyperparameters fixed)}{figure.caption.59}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Per-class Analysis}{32}{subsection.8.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.4}Evaluation Protocol}{32}{subsection.8.4}\protected@file@percent }
+\newlabel{sec:eval_protocol}{{8.4}{32}{Evaluation Protocol}{subsection.8.4}{}}
+\@writefile{toc}{\contentsline {paragraph}{The 88-class vs.\ 99-class problem.}{32}{section*.60}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{How we address it.}{33}{section*.61}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {9}Analysis and Discussion}{34}{section.9}\protected@file@percent }
+\newlabel{sec:discussion}{{9}{34}{Analysis and Discussion}{section.9}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.1}Persistent Confusion Across Models}{34}{subsection.9.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.2}Feature Role Summary}{34}{subsection.9.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {18}{\ignorespaces Feature group roles derived from ablation and separability analysis.}}{34}{table.caption.62}\protected@file@percent }
+\newlabel{tab:feature_roles}{{18}{34}{Feature group roles derived from ablation and separability analysis}{table.caption.62}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.3}Hierarchical vs.\ Flat GNN}{34}{subsection.9.3}\protected@file@percent }
 \citation{esm2}
-\@writefile{toc}{\contentsline {paragraph}{Spatial hierarchy.}{33}{section*.59}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Information bottleneck.}{33}{section*.60}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {9.4}Why Point-cloud Methods Underperform}{33}{subsection.9.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {9.5}What Could Push Beyond the Ceiling}{33}{subsection.9.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {9.6}Geometric Separability via RI Edge Features}{33}{subsection.9.6}\protected@file@percent }
-\newlabel{sec:analysis:ri_sep}{{9.6}{33}{Geometric Separability via RI Edge Features}{subsection.9.6}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {16}{\ignorespaces Separability of RI edge features vs 8D node features. SW measured on pooled edge distributions; SVM on 10D per-protein statistics (5-fold stratified CV).}}{34}{table.caption.61}\protected@file@percent }
-\newlabel{tab:ri_sep}{{16}{34}{Separability of RI edge features vs 8D node features. SW measured on pooled edge distributions; SVM on 10D per-protein statistics (5-fold stratified CV)}{table.caption.61}{}}
-\@writefile{toc}{\contentsline {paragraph}{RI geometry does not separate confusable pairs.}{34}{section*.62}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Global size statistics encode class identity.}{34}{section*.63}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{RI protein-level statistics carry a small orthogonal signal.}{34}{section*.64}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Implication for RI-GIN.}{34}{section*.65}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {9.7}Limitations}{34}{subsection.9.7}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {18}{\ignorespaces RI edge feature separability analysis. \textbf  {Left:} KS statistic per RI dimension for each pair -- only (8,5) control shows large KS (edge length dimension 0.60). \textbf  {Middle:} SW comparison across feature types -- RI features have far lower SW than 8D node features for confusable pairs. \textbf  {Right:} SVM balanced accuracy (5-fold CV) -- RI features match or marginally exceed 8D node features for three of four pairs, but the 8D advantage on (86,14) confirms electrostatics dominate there.}}{35}{figure.caption.66}\protected@file@percent }
-\newlabel{fig:ri_sep}{{18}{35}{RI edge feature separability analysis. \textbf {Left:} KS statistic per RI dimension for each pair -- only (8,5) control shows large KS (edge length dimension 0.60). \textbf {Middle:} SW comparison across feature types -- RI features have far lower SW than 8D node features for confusable pairs. \textbf {Right:} SVM balanced accuracy (5-fold CV) -- RI features match or marginally exceed 8D node features for three of four pairs, but the 8D advantage on (86,14) confirms electrostatics dominate there}{figure.caption.66}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {10}Conclusion}{35}{section.10}\protected@file@percent }
-\newlabel{sec:conclusion}{{10}{35}{Conclusion}{section.10}{}}
-\@writefile{toc}{\contentsline {paragraph}{Pipeline.}{35}{section*.67}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Architecture.}{35}{section*.68}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Electrostatic potential is the key signal.}{35}{section*.69}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Dataset ceiling.}{35}{section*.70}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{State of the art.}{35}{section*.71}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Enriched feature datasets.}{36}{section*.72}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Negative results.}{36}{section*.73}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Future work.}{36}{section*.74}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Spatial hierarchy.}{35}{section*.63}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Information bottleneck.}{35}{section*.64}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.4}Why Point-cloud Methods Underperform}{35}{subsection.9.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.5}What Could Push Beyond the Ceiling}{35}{subsection.9.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.6}Why RI-GIN Improves over Standard GIN}{35}{subsection.9.6}\protected@file@percent }
+\newlabel{sec:analysis:ri_sep}{{9.6}{35}{Why RI-GIN Improves over Standard GIN}{subsection.9.6}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {18}{\ignorespaces RI edge feature separability analysis (full data in Tables~\ref {tab:ks_ri}--\ref {tab:svm_ri}). \textbf  {Left:} KS statistic per RI dimension — confusable pairs (top three) are near zero across all dimensions; only the control (8,5) separates cleanly via edge length (KS\,=\,0.605). \textbf  {Middle:} SW(RI 5D) is 7--23$\times $ lower than SW(8D node feat) for confusable pairs. \textbf  {Right:} SVM balanced accuracy (5-fold CV) — RI protein statistics match or slightly exceed 8D for (61,90) and (70,56), but (86,14) remains better separated by electrostatics.}}{36}{figure.caption.65}\protected@file@percent }
+\newlabel{fig:ri_sep}{{18}{36}{RI edge feature separability analysis (full data in Tables~\ref {tab:ks_ri}--\ref {tab:svm_ri}). \textbf {Left:} KS statistic per RI dimension — confusable pairs (top three) are near zero across all dimensions; only the control (8,5) separates cleanly via edge length (KS\,=\,0.605). \textbf {Middle:} SW(RI 5D) is 7--23$\times $ lower than SW(8D node feat) for confusable pairs. \textbf {Right:} SVM balanced accuracy (5-fold CV) — RI protein statistics match or slightly exceed 8D for (61,90) and (70,56), but (86,14) remains better separated by electrostatics}{figure.caption.65}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.7}Limitations}{36}{subsection.9.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {10}Conclusion}{37}{section.10}\protected@file@percent }
+\newlabel{sec:conclusion}{{10}{37}{Conclusion}{section.10}{}}
+\@writefile{toc}{\contentsline {paragraph}{Pipeline.}{37}{section*.66}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Architecture.}{37}{section*.67}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Electrostatic potential is the key signal.}{37}{section*.68}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Dataset ceiling.}{37}{section*.69}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{State of the art.}{37}{section*.70}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Enriched feature datasets.}{37}{section*.71}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Negative results.}{37}{section*.72}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Future work.}{37}{section*.73}\protected@file@percent }
 \bibstyle{plain}
 \bibcite{shrec25}{1}
 \bibcite{gin}{2}
@@ -237,4 +245,4 @@
 \bibcite{mamba3d}{4}
 \bibcite{esm2}{5}
 \bibcite{riconv2}{6}
-\gdef \@abspage@last{37}
+\gdef \@abspage@last{39}

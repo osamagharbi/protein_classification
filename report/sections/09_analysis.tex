@@ -122,81 +122,53 @@ current VTK surface features:
         contrastive objective could learn richer representations.
 \end{itemize}
 
-\subsection{Geometric Separability via RI Edge Features}
+\subsection{Why RI-GIN Improves over Standard GIN}
 \label{sec:analysis:ri_sep}
 
-To determine whether the RI-GIN improvement stems from richer geometric information
-or from better invariant representations, we analysed the separability of the five
-precomputed SO(3)-invariant scalars directly.
-For each confusable pair we compared: (i) Sliced Wasserstein distance on
-pooled edge distributions (SW), and (ii) SVM balanced accuracy on
-per-protein statistics (10D: mean + std per RI dimension, 5-fold CV).
-
-\begin{table}[h]
-  \centering
-  \caption{Separability of RI edge features vs 8D node features.
-           SW measured on pooled edge distributions; SVM on 10D per-protein
-           statistics (5-fold stratified CV).}
-  \label{tab:ri_sep}
-  \begin{tabular}{lrrrr}
-    \toprule
-    \textbf{Pair} & \textbf{SW(8D feat)} & \textbf{SW(RI 5D)} & \textbf{SVM(8D)} & \textbf{SVM(RI)} \\
-    \midrule
-    (61,\,90) confusable & 0.0272 & 0.0040 & 0.543 & 0.597 \\
-    (70,\,56) confusable & 0.1041 & 0.0033 & 0.573 & 0.605 \\
-    (86,\,14) confusable & 0.1397 & 0.0060 & 0.665 & 0.631 \\
-    (8,\,5) control      & 0.0613 & 0.0286 & 0.660 & 1.000 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-Three findings emerge.
-
-\paragraph{RI geometry does not separate confusable pairs.}
-SW(RI) is 7--23$\times$ lower than SW(8D feat) for every confusable pair.
-KS tests on individual RI dimensions confirm the same picture:
-all five invariant scalars have KS $\leq 0.0043$ for (61,\,90), meaning the
-pooled edge distributions are nearly indistinguishable.
-The confusability between these protein families is chemical -- driven by
-similar electrostatic surface distributions -- not structural.
-
-\paragraph{Global size statistics encode class identity.}
-For the easy control pair (8,\,5), the edge-length dimension alone achieves
-KS = 0.605, and SVM(RI) reaches 1.000.
-Class 8 proteins are larger than class 5 proteins;
-after FPS subsampling to 1\,000 nodes, the mesh edge lengths scale
-proportionally with protein size, making this dimension trivially discriminative.
-The confusable pairs, by contrast, have KS(dist) $\leq 0.041$, confirming similar sizes.
-
-\paragraph{RI protein-level statistics carry a small orthogonal signal.}
-Despite near-zero edge-level SW, the SVM on per-protein RI statistics slightly
-exceeds the 8D node-feature SVM for (61,\,90) ($+$5\,pp) and (70,\,56) ($+$3\,pp).
-This suggests that the \textit{mean} RI geometry per protein carries weak
-complementary information not captured by electrostatic features alone, though
-the gain is too small to close the separability gap.
-
-\paragraph{Implication for RI-GIN.}
-The improvement from RI-GIN over standard GIN ($+$0.2\,pp macro-F1,
-$+$1.3\,pp balanced accuracy) is therefore not attributable to a richer
-geometric feature space.
-Rather, hardcoding rotation invariance into the message function produces a
-more consistent learned representation across proteins regardless of their
-orientation in global coordinates -- a regularisation effect rather than
-a feature-enrichment effect.
+Section~\ref{sec:analysis:ri} showed that the five SO(3)-invariant RI edge
+scalars have universally lower Sliced Wasserstein distances than the 8D node
+features for confusable pairs (SW(RI)\,$\leq$\,0.006 vs SW(8D)\,=\,0.027--0.140),
+and KS values near zero for all confusable pairs ($\leq$0.041, vs Potential
+KS\,=\,0.031--0.250).
+This rules out the possibility that RI-GIN gains its improvement
+($+$0.2\,pp macro-F1, $+$1.3\,pp balanced accuracy over standard GIN)
+by accessing richer geometric information.
 
 \begin{figure}[h]
   \centering
   \includegraphics[width=\textwidth]{figures/separability_ri_features.pdf}
-  \caption{RI edge feature separability analysis.
-           \textbf{Left:} KS statistic per RI dimension for each pair -- only
-           (8,5) control shows large KS (edge length dimension 0.60).
-           \textbf{Middle:} SW comparison across feature types -- RI features
-           have far lower SW than 8D node features for confusable pairs.
-           \textbf{Right:} SVM balanced accuracy (5-fold CV) -- RI features
-           match or marginally exceed 8D node features for three of four pairs,
-           but the 8D advantage on (86,14) confirms electrostatics dominate there.}
+  \caption{RI edge feature separability analysis (full data in
+           Tables~\ref{tab:ks_ri}--\ref{tab:svm_ri}).
+           \textbf{Left:} KS statistic per RI dimension — confusable pairs
+           (top three) are near zero across all dimensions; only the control
+           (8,5) separates cleanly via edge length (KS\,=\,0.605).
+           \textbf{Middle:} SW(RI 5D) is 7--23$\times$ lower than
+           SW(8D node feat) for confusable pairs.
+           \textbf{Right:} SVM balanced accuracy (5-fold CV) — RI protein
+           statistics match or slightly exceed 8D for (61,90) and (70,56),
+           but (86,14) remains better separated by electrostatics.}
   \label{fig:ri_sep}
 \end{figure}
+
+The improvement from RI-GIN is therefore a \textbf{representation effect}
+rather than a feature-enrichment effect.
+Hard-coding rotation invariance into the edge message function removes the
+burden of learning approximate invariance from data, producing embeddings
+that are more consistent across proteins regardless of their orientation in
+global coordinates.
+This acts as a form of geometric regularisation: the model wastes fewer
+parameters on orientation-specific patterns and more on the discriminating
+chemistry.
+
+A secondary contribution comes from the global shape signal captured in RI
+edge-length statistics: per-protein mean edge length correlates with protein
+size, providing an orthogonal, size-encoded representation that slightly boosts
+SVM balanced accuracy for (61,\,90) ($+$5\,pp) and (70,\,56) ($+$3\,pp) over
+the 8D node-feature baseline.
+This cross-protein scale information is naturally present in the RI distance
+dimension without any special normalisation, unlike the geometric features
+which required explicit global normalisation to prevent per-protein z-scoring
+from erasing it.
 
 \subsection{Limitations}
 

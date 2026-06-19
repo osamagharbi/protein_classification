@@ -41,68 +41,69 @@
 \contentsline {subsubsection}{\numberline {4.5.2}Sliced Wasserstein on Curvature}{16}{subsubsection.4.5.2}%
 \contentsline {subsubsection}{\numberline {4.5.3}Spatial Autocorrelation of Curvature}{16}{subsubsection.4.5.3}%
 \contentsline {subsubsection}{\numberline {4.5.4}Effect on Protein-level Classification}{16}{subsubsection.4.5.4}%
-\contentsline {subsection}{\numberline {4.6}Summary}{16}{subsection.4.6}%
-\contentsline {section}{\numberline {5}Model Architectures}{18}{section.5}%
-\contentsline {subsection}{\numberline {5.1}Flat GNN Baseline}{18}{subsection.5.1}%
-\contentsline {subsection}{\numberline {5.2}Hierarchical GNN: HierGIN}{18}{subsection.5.2}%
-\contentsline {subsubsection}{\numberline {5.2.1}Node-level GIN}{18}{subsubsection.5.2.1}%
-\contentsline {subsubsection}{\numberline {5.2.2}Geodesic Voronoi Patch Pooling}{18}{subsubsection.5.2.2}%
-\contentsline {subsubsection}{\numberline {5.2.3}Patch-level GIN}{19}{subsubsection.5.2.3}%
-\contentsline {subsubsection}{\numberline {5.2.4}Readout and Classification}{19}{subsubsection.5.2.4}%
-\contentsline {subsection}{\numberline {5.3}Node Backbone Variants}{19}{subsection.5.3}%
-\contentsline {subsection}{\numberline {5.4}Rotation-Invariant Node Backbone: RI-GIN}{20}{subsection.5.4}%
-\contentsline {paragraph}{Computational note.}{20}{section*.34}%
-\contentsline {subsection}{\numberline {5.5}VTK Mesh Visualisation}{20}{subsection.5.5}%
-\contentsline {section}{\numberline {6}Training Setup}{21}{section.6}%
-\contentsline {subsection}{\numberline {6.1}Cosine Annealing with Warmup}{21}{subsection.6.1}%
-\contentsline {subsection}{\numberline {6.2}Class Weighting}{22}{subsection.6.2}%
-\contentsline {subsection}{\numberline {6.3}Early Stopping}{22}{subsection.6.3}%
-\contentsline {subsection}{\numberline {6.4}Validation Split}{23}{subsection.6.4}%
-\contentsline {section}{\numberline {7}Ablation Studies}{24}{section.7}%
-\contentsline {subsection}{\numberline {7.1}Feature Mode Ablation}{24}{subsection.7.1}%
-\contentsline {paragraph}{Findings.}{24}{section*.40}%
-\contentsline {subsection}{\numberline {7.2}Patch Count Ablation}{25}{subsection.7.2}%
-\contentsline {subsection}{\numberline {7.3}Hidden Dimension}{26}{subsection.7.3}%
-\contentsline {subsection}{\numberline {7.4}Node GIN Depth}{26}{subsection.7.4}%
-\contentsline {subsection}{\numberline {7.5}LR Schedule}{26}{subsection.7.5}%
-\contentsline {subsection}{\numberline {7.6}Random Walk Positional Encoding}{27}{subsection.7.6}%
-\contentsline {subsection}{\numberline {7.7}Patch-level Scalar Re-injection}{27}{subsection.7.7}%
-\contentsline {paragraph}{Motivation.}{27}{section*.45}%
-\contentsline {paragraph}{Experiments.}{27}{section*.46}%
-\contentsline {paragraph}{Findings.}{27}{section*.47}%
-\contentsline {subsection}{\numberline {7.8}Rotation-Invariant Node Backbone (RI-GIN)}{28}{subsection.7.8}%
-\contentsline {paragraph}{Motivation.}{28}{section*.48}%
-\contentsline {paragraph}{Implementation.}{28}{section*.49}%
-\contentsline {paragraph}{Results.}{28}{section*.50}%
-\contentsline {paragraph}{Memory constraint.}{28}{section*.52}%
-\contentsline {section}{\numberline {8}Results and Comparison}{29}{section.8}%
-\contentsline {subsection}{\numberline {8.1}Main Results Table}{29}{subsection.8.1}%
-\contentsline {paragraph}{Key observations.}{29}{section*.54}%
-\contentsline {subsection}{\numberline {8.2}Backbone Comparison}{30}{subsection.8.2}%
-\contentsline {subsection}{\numberline {8.3}Per-class Analysis}{30}{subsection.8.3}%
-\contentsline {subsection}{\numberline {8.4}Evaluation Protocol}{30}{subsection.8.4}%
-\contentsline {paragraph}{The 88-class vs.\ 99-class problem.}{30}{section*.56}%
-\contentsline {paragraph}{How we address it.}{31}{section*.57}%
-\contentsline {section}{\numberline {9}Analysis and Discussion}{32}{section.9}%
-\contentsline {subsection}{\numberline {9.1}Persistent Confusion Across Models}{32}{subsection.9.1}%
-\contentsline {subsection}{\numberline {9.2}Feature Role Summary}{32}{subsection.9.2}%
-\contentsline {subsection}{\numberline {9.3}Hierarchical vs.\ Flat GNN}{32}{subsection.9.3}%
-\contentsline {paragraph}{Spatial hierarchy.}{33}{section*.59}%
-\contentsline {paragraph}{Information bottleneck.}{33}{section*.60}%
-\contentsline {subsection}{\numberline {9.4}Why Point-cloud Methods Underperform}{33}{subsection.9.4}%
-\contentsline {subsection}{\numberline {9.5}What Could Push Beyond the Ceiling}{33}{subsection.9.5}%
-\contentsline {subsection}{\numberline {9.6}Geometric Separability via RI Edge Features}{33}{subsection.9.6}%
-\contentsline {paragraph}{RI geometry does not separate confusable pairs.}{34}{section*.62}%
-\contentsline {paragraph}{Global size statistics encode class identity.}{34}{section*.63}%
-\contentsline {paragraph}{RI protein-level statistics carry a small orthogonal signal.}{34}{section*.64}%
-\contentsline {paragraph}{Implication for RI-GIN.}{34}{section*.65}%
-\contentsline {subsection}{\numberline {9.7}Limitations}{34}{subsection.9.7}%
-\contentsline {section}{\numberline {10}Conclusion}{35}{section.10}%
-\contentsline {paragraph}{Pipeline.}{35}{section*.67}%
-\contentsline {paragraph}{Architecture.}{35}{section*.68}%
-\contentsline {paragraph}{Electrostatic potential is the key signal.}{35}{section*.69}%
-\contentsline {paragraph}{Dataset ceiling.}{35}{section*.70}%
-\contentsline {paragraph}{State of the art.}{35}{section*.71}%
-\contentsline {paragraph}{Enriched feature datasets.}{36}{section*.72}%
-\contentsline {paragraph}{Negative results.}{36}{section*.73}%
-\contentsline {paragraph}{Future work.}{36}{section*.74}%
+\contentsline {subsection}{\numberline {4.6}SO(3)-Invariant RI Edge Feature Analysis}{16}{subsection.4.6}%
+\contentsline {subsubsection}{\numberline {4.6.1}KS Test on RI Edge Scalars}{17}{subsubsection.4.6.1}%
+\contentsline {subsubsection}{\numberline {4.6.2}Sliced Wasserstein on RI Features}{17}{subsubsection.4.6.2}%
+\contentsline {subsubsection}{\numberline {4.6.3}Protein-level SVM on RI Statistics}{17}{subsubsection.4.6.3}%
+\contentsline {paragraph}{Key finding.}{18}{section*.34}%
+\contentsline {subsection}{\numberline {4.7}Summary}{19}{subsection.4.7}%
+\contentsline {section}{\numberline {5}Model Architectures}{20}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Flat GNN Baseline}{20}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Hierarchical GNN: HierGIN}{20}{subsection.5.2}%
+\contentsline {subsubsection}{\numberline {5.2.1}Node-level GIN}{20}{subsubsection.5.2.1}%
+\contentsline {subsubsection}{\numberline {5.2.2}Geodesic Voronoi Patch Pooling}{20}{subsubsection.5.2.2}%
+\contentsline {subsubsection}{\numberline {5.2.3}Patch-level GIN}{21}{subsubsection.5.2.3}%
+\contentsline {subsubsection}{\numberline {5.2.4}Readout and Classification}{21}{subsubsection.5.2.4}%
+\contentsline {subsection}{\numberline {5.3}Node Backbone Variants}{21}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Rotation-Invariant Node Backbone: RI-GIN}{22}{subsection.5.4}%
+\contentsline {paragraph}{Computational note.}{22}{section*.38}%
+\contentsline {subsection}{\numberline {5.5}VTK Mesh Visualisation}{22}{subsection.5.5}%
+\contentsline {section}{\numberline {6}Training Setup}{23}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Cosine Annealing with Warmup}{23}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Class Weighting}{24}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Early Stopping}{24}{subsection.6.3}%
+\contentsline {subsection}{\numberline {6.4}Validation Split}{25}{subsection.6.4}%
+\contentsline {section}{\numberline {7}Ablation Studies}{26}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Feature Mode Ablation}{26}{subsection.7.1}%
+\contentsline {paragraph}{Findings.}{26}{section*.44}%
+\contentsline {subsection}{\numberline {7.2}Patch Count Ablation}{27}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Hidden Dimension}{28}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}Node GIN Depth}{28}{subsection.7.4}%
+\contentsline {subsection}{\numberline {7.5}LR Schedule}{28}{subsection.7.5}%
+\contentsline {subsection}{\numberline {7.6}Random Walk Positional Encoding}{29}{subsection.7.6}%
+\contentsline {subsection}{\numberline {7.7}Patch-level Scalar Re-injection}{29}{subsection.7.7}%
+\contentsline {paragraph}{Motivation.}{29}{section*.49}%
+\contentsline {paragraph}{Experiments.}{29}{section*.50}%
+\contentsline {paragraph}{Findings.}{29}{section*.51}%
+\contentsline {subsection}{\numberline {7.8}Rotation-Invariant Node Backbone (RI-GIN)}{30}{subsection.7.8}%
+\contentsline {paragraph}{Motivation.}{30}{section*.52}%
+\contentsline {paragraph}{Implementation.}{30}{section*.53}%
+\contentsline {paragraph}{Results.}{30}{section*.54}%
+\contentsline {paragraph}{Memory constraint.}{30}{section*.56}%
+\contentsline {section}{\numberline {8}Results and Comparison}{31}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Main Results Table}{31}{subsection.8.1}%
+\contentsline {paragraph}{Key observations.}{31}{section*.58}%
+\contentsline {subsection}{\numberline {8.2}Backbone Comparison}{32}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}Per-class Analysis}{32}{subsection.8.3}%
+\contentsline {subsection}{\numberline {8.4}Evaluation Protocol}{32}{subsection.8.4}%
+\contentsline {paragraph}{The 88-class vs.\ 99-class problem.}{32}{section*.60}%
+\contentsline {paragraph}{How we address it.}{33}{section*.61}%
+\contentsline {section}{\numberline {9}Analysis and Discussion}{34}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Persistent Confusion Across Models}{34}{subsection.9.1}%
+\contentsline {subsection}{\numberline {9.2}Feature Role Summary}{34}{subsection.9.2}%
+\contentsline {subsection}{\numberline {9.3}Hierarchical vs.\ Flat GNN}{34}{subsection.9.3}%
+\contentsline {paragraph}{Spatial hierarchy.}{35}{section*.63}%
+\contentsline {paragraph}{Information bottleneck.}{35}{section*.64}%
+\contentsline {subsection}{\numberline {9.4}Why Point-cloud Methods Underperform}{35}{subsection.9.4}%
+\contentsline {subsection}{\numberline {9.5}What Could Push Beyond the Ceiling}{35}{subsection.9.5}%
+\contentsline {subsection}{\numberline {9.6}Why RI-GIN Improves over Standard GIN}{35}{subsection.9.6}%
+\contentsline {subsection}{\numberline {9.7}Limitations}{36}{subsection.9.7}%
+\contentsline {section}{\numberline {10}Conclusion}{37}{section.10}%
+\contentsline {paragraph}{Pipeline.}{37}{section*.66}%
+\contentsline {paragraph}{Architecture.}{37}{section*.67}%
+\contentsline {paragraph}{Electrostatic potential is the key signal.}{37}{section*.68}%
+\contentsline {paragraph}{Dataset ceiling.}{37}{section*.69}%
+\contentsline {paragraph}{State of the art.}{37}{section*.70}%
+\contentsline {paragraph}{Enriched feature datasets.}{37}{section*.71}%
+\contentsline {paragraph}{Negative results.}{37}{section*.72}%
+\contentsline {paragraph}{Future work.}{37}{section*.73}%
