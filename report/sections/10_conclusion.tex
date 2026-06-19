@@ -38,9 +38,13 @@ Closing the remaining gap requires sequence-level or volumetric information.
 HierGIN-14D (global norm) achieves macro-F1 $=$ \textbf{0.808}, accuracy
 $=$ \textbf{0.865}, and balanced accuracy $=$ \textbf{0.812}, outperforming
 both SHREC\,25 entries PointMamba (0.720) and Mamba3D (0.672).
+The rotation-invariant backbone (RI-GIN) applied to 8D features matches
+the 14D model on accuracy (0.865) and balanced accuracy (0.813) while using
+6 fewer input features, offering a promising route toward combining both
+improvements.
 The surface-topology-aware graph construction, combined with electrostatic
-and geometric features with correct global normalisation, gives a structural
-advantage over general point-cloud methods.
+features and correct global normalisation, gives a structural advantage over
+general point-cloud methods.
 
 \paragraph{Enriched feature datasets.}
 The 12D curvature-enriched dataset adds no separability beyond the 8D baseline

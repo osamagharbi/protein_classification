@@ -103,11 +103,14 @@ current VTK surface features:
         mixup, or protein-surface augmentation) could close this gap and
         yield further improvement.
   \item \textbf{Rotation-invariant message passing}: the RI-GIN backbone
-        (Section~\ref{sec:arch:rigin}) removes the dependence on the global
-        orientation frame by encoding messages as SO(3)-invariant scalars.
-        Whether this yields measurable improvement over the orientation-agnostic
-        representations learned by standard GIN is under evaluation
-        (Section~\ref{sec:ablation:rigin}).
+        (Section~\ref{sec:arch:rigin}) yields a consistent $+$0.2\,pp
+        macro-F1 and $+$1.3\,pp balanced accuracy improvement over standard
+        GIN on 8D features.
+        The 8D RI-GIN model matches the 14D global-norm model on accuracy and
+        balanced accuracy while using 6 fewer input features, suggesting that
+        hard-coding orientation invariance partially compensates for the
+        absence of geometric features.
+        Results on 14D features are pending (Section~\ref{sec:ablation:rigin}).
   \item \textbf{Volumetric representation}: full 3D electron density from
         the protein interior (surface geometric curvature alone has been
         tested and adds little --- Section~\ref{sec:analysis:curvature}).
