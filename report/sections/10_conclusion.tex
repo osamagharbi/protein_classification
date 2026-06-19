@@ -60,6 +60,9 @@ LRF-GIN --- replacing on-the-fly RI scalars with precomputed 8D curvature-frame
 edge features --- degrades macro-F1 by $-$3.4\,pp vs.\ RI-GIN.
 Precomputed LRF frames from PCA are unstable on near-flat surfaces and cannot be
 corrected at training time, confirming that on-the-fly invariant computation is preferable.
+Three-level pooling (1\,000\,$\to$\,128\,$\to$\,32) using two independently-built
+FPS assignments collapses to near-random performance (macro-F1\,=\,0.016);
+nested assignment construction is required for multi-level pooling to be effective.
 
 \paragraph{Future work.}
 The highest-priority direction is replacing HierGIN's kNN-6 node stage with

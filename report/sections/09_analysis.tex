@@ -249,6 +249,25 @@ dimension without any special normalisation, unlike the geometric features
 which required explicit global normalisation to prevent per-protein z-scoring
 from erasing it.
 
+\subsection{Three-Level Hierarchy: Negative Result and Root Cause}
+
+Adding a second pooling stage (1\,000\,$\to$\,128\,$\to$\,32 nodes) collapses
+macro-F1 to 0.016 --- near random.
+The failure is architectural, not capacity-related: the k\,=\,128 and k\,=\,32
+patch assignments were built by two \emph{independent} FPS runs on the 1\,000-node
+graph.
+Their seed nodes have no parent-child relationship, so the majority-vote
+mapping from mid-patches to final-patches is incoherent --- many final patches
+receive no signal, and others aggregate representations from geometrically
+unrelated mid-patches.
+
+For three-level pooling to work, the assignments must be \textbf{hierarchically
+nested}: the k\,=\,32 seeds should be chosen by FPS on the k\,=\,128 patch
+centres, not independently on the 1\,000 nodes.
+Building such nested patchassign files is straightforward but was not done;
+results from standard two-level pooling (1\,000\,$\to$\,64) remain the best
+graph-based configuration.
+
 \subsection{Limitations}
 
 \begin{itemize}
