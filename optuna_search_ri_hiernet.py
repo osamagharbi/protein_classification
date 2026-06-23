@@ -187,8 +187,20 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
         _csv_writer = csv.writer(_csv_fh)
         _csv_writer.writerow([
             "epoch", "lr",
-            "train_loss", "train_acc", "train_mf1",
-            "val_loss",   "val_acc",   "val_mf1",   "val_balacc", "val_wf1",
+            # train
+            "tr_loss",
+            "tr_acc", "tr_balacc",
+            "tr_f1_micro", "tr_f1_macro", "tr_f1_weighted",
+            "tr_prec_micro", "tr_prec_macro", "tr_prec_weighted",
+            "tr_rec_micro",  "tr_rec_macro",  "tr_rec_weighted",
+            "tr_map_macro",  "tr_map_weighted",
+            # val
+            "val_loss",
+            "val_acc", "val_balacc",
+            "val_f1_micro", "val_f1_macro", "val_f1_weighted",
+            "val_prec_micro", "val_prec_macro", "val_prec_weighted",
+            "val_rec_micro",  "val_rec_macro",  "val_rec_weighted",
+            "val_map_macro",  "val_map_weighted",
             "is_best",
         ])
 
@@ -205,16 +217,29 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
             if test_ds is not None:
                 best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
         if _csv_writer is not None:
+            def _fmt(d, key): return f"{d.get(key, float('nan')):.4f}"
             _csv_writer.writerow([
                 ep, f"{lr_now:.6e}",
-                f"{tr['loss']:.4f}", f"{tr['accuracy']:.4f}", f"{tr['f1_macro']:.4f}",
-                f"{va['loss']:.4f}", f"{va['accuracy']:.4f}", f"{va['f1_macro']:.4f}",
-                f"{va['balanced_accuracy']:.4f}", f"{va['f1_weighted']:.4f}",
+                # train
+                _fmt(tr, "loss"),
+                _fmt(tr, "accuracy"),          _fmt(tr, "balanced_accuracy"),
+                _fmt(tr, "f1_micro"),          _fmt(tr, "f1_macro"),          _fmt(tr, "f1_weighted"),
+                _fmt(tr, "precision_micro"),   _fmt(tr, "precision_macro"),   _fmt(tr, "precision_weighted"),
+                _fmt(tr, "recall_micro"),      _fmt(tr, "recall_macro"),      _fmt(tr, "recall_weighted"),
+                _fmt(tr, "map_macro"),         _fmt(tr, "map_weighted"),
+                # val
+                _fmt(va, "loss"),
+                _fmt(va, "accuracy"),          _fmt(va, "balanced_accuracy"),
+                _fmt(va, "f1_micro"),          _fmt(va, "f1_macro"),          _fmt(va, "f1_weighted"),
+                _fmt(va, "precision_micro"),   _fmt(va, "precision_macro"),   _fmt(va, "precision_weighted"),
+                _fmt(va, "recall_micro"),      _fmt(va, "recall_macro"),      _fmt(va, "recall_weighted"),
+                _fmt(va, "map_macro"),         _fmt(va, "map_weighted"),
                 int(is_best),
             ])
         print(f"ep {ep:3d}  lr={lr_now:.2e}  "
-              f"tr_loss={tr['loss']:.4f}  tr_acc={tr['accuracy']:.4f}  "
-              f"val_acc={va['accuracy']:.4f}  val_mf1={va['f1_macro']:.4f}"
+              f"tr_loss={tr['loss']:.4f}  tr_acc={tr['accuracy']:.4f}  tr_mf1={tr['f1_macro']:.4f}  "
+              f"val_acc={va['accuracy']:.4f}  val_balacc={va['balanced_accuracy']:.4f}  "
+              f"val_mf1={va['f1_macro']:.4f}  val_map={va.get('map_macro', float('nan')):.4f}"
               + ("  *best*" if is_best else ""), flush=True)
         if on_epoch is not None:
             on_epoch(ep, sel)                                # may raise optuna.TrialPruned

@@ -32,7 +32,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, Subset, WeightedRandomSampler
 from tqdm import tqdm
-from sklearn.metrics import f1_score, recall_score, accuracy_score
+from sklearn.metrics import (
+    f1_score, recall_score, accuracy_score,
+    precision_score, average_precision_score,
+)
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -201,17 +204,39 @@ def supcon_loss(proj, labels, temp=0.1):
     return loss.mean() if loss.numel() > 0 else proj.new_zeros(())
 
 
-def metrics(y_true, y_pred):
-    """88-class basis (over classes present in y_true) + raw-99 macro-F1."""
+def metrics(y_true, y_pred, y_prob=None):
+    """Full metric suite over classes present in y_true (88-class basis).
+    y_prob: (N, 99) softmax probabilities — enables MAP computation."""
     valid = sorted(set(int(c) for c in y_true))
-    return {
-        "accuracy": accuracy_score(y_true, y_pred),
-        "balanced_accuracy": recall_score(y_true, y_pred, average="macro", zero_division=0, labels=valid),
-        "f1_macro": f1_score(y_true, y_pred, average="macro", zero_division=0, labels=valid),
-        "f1_weighted": f1_score(y_true, y_pred, average="weighted", zero_division=0, labels=valid),
-        "f1_macro_99": f1_score(y_true, y_pred, average="macro", zero_division=0, labels=list(range(99))),
+    kw = dict(zero_division=0, labels=valid)
+    m = {
+        # accuracy
+        "accuracy":           accuracy_score(y_true, y_pred),
+        "balanced_accuracy":  recall_score(y_true, y_pred, average="macro", **kw),
+        # F1
+        "f1_micro":           f1_score(y_true, y_pred, average="micro",    zero_division=0),
+        "f1_macro":           f1_score(y_true, y_pred, average="macro",    **kw),
+        "f1_weighted":        f1_score(y_true, y_pred, average="weighted", **kw),
+        "f1_macro_99":        f1_score(y_true, y_pred, average="macro",    zero_division=0, labels=list(range(99))),
+        # precision
+        "precision_micro":    precision_score(y_true, y_pred, average="micro",    zero_division=0),
+        "precision_macro":    precision_score(y_true, y_pred, average="macro",    **kw),
+        "precision_weighted": precision_score(y_true, y_pred, average="weighted", **kw),
+        # recall  (recall_macro == balanced_accuracy)
+        "recall_micro":       recall_score(y_true, y_pred, average="micro",    zero_division=0),
+        "recall_macro":       recall_score(y_true, y_pred, average="macro",    **kw),
+        "recall_weighted":    recall_score(y_true, y_pred, average="weighted", **kw),
         "n_classes": len(valid),
     }
+    if y_prob is not None:
+        try:
+            m["map_macro"]    = float(average_precision_score(
+                y_true, y_prob, average="macro",    labels=valid))
+            m["map_weighted"] = float(average_precision_score(
+                y_true, y_prob, average="weighted", labels=valid))
+        except Exception:
+            m["map_macro"] = m["map_weighted"] = float("nan")
+    return m
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -222,7 +247,7 @@ def run_epoch(model, loader, criterion, device, optimizer=None, use_chem=True,
               supcon_w=0.0, desc=""):
     train = optimizer is not None
     model.train() if train else model.eval()
-    total, ce_tot, sc_tot, preds, labs = 0.0, 0.0, 0.0, [], []
+    total, ce_tot, sc_tot, preds, probs, labs = 0.0, 0.0, 0.0, [], [], []
     ctx = torch.enable_grad() if train else torch.no_grad()
     with ctx:
         for pos, normal, chem, y in tqdm(loader, desc=desc, leave=False):
@@ -236,8 +261,11 @@ def run_epoch(model, loader, criterion, device, optimizer=None, use_chem=True,
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
             total += loss.item(); ce_tot += ce.item(); sc_tot += float(sc)
-            preds.extend(logits.argmax(1).cpu().numpy()); labs.extend(y.cpu().numpy())
-    m = metrics(np.array(labs), np.array(preds))
+            preds.extend(logits.argmax(1).cpu().numpy())
+            probs.extend(torch.softmax(logits, dim=1).cpu().numpy())
+            labs.extend(y.cpu().numpy())
+    y_true = np.array(labs); y_pred = np.array(preds); y_prob = np.array(probs)
+    m = metrics(y_true, y_pred, y_prob=y_prob)
     m["loss"] = total / max(1, len(loader)); m["ce"] = ce_tot / max(1, len(loader))
     m["supcon"] = sc_tot / max(1, len(loader))
     return m
