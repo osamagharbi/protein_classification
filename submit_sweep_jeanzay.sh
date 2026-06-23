@@ -1,50 +1,70 @@
 #!/bin/bash
 # Orchestrate the parallel seed-averaged RI-HierNet sweep on Jean-Zay:
 #   1. gen   : sample N_CONFIGS configs ONCE  -> $SWEEP_ROOT/configs.json
+#              (skipped when EXISTING_SWEEP_ROOT is supplied — reuses its configs.json)
 #   2. array : N_CONFIGS x N_SEEDS GPU tasks  (one training per GPU)
+#              seed_id = (task % N_SEEDS) + SEED_OFFSET
 #   3. agg   : after the array, group by config -> mean +/- std + best command
 #
-# Usage:   ./submit_sweep_jeanzay.sh [N_CONFIGS] [N_SEEDS]
-# Default: 100 configs x 5 seeds = 500 tasks (<= 512 GPU/user on qos_gpu-t3).
+# Usage:
+#   ./submit_sweep_jeanzay.sh [N_CONFIGS] [N_SEEDS] [SEED_OFFSET] [EXISTING_SWEEP_ROOT]
+#
+# Examples:
+#   ./submit_sweep_jeanzay.sh                          # new sweep,   seeds 0-4
+#   ./submit_sweep_jeanzay.sh 100 5 5 $PREV_SWEEP      # extend sweep, seeds 5-9 (same configs.json)
+#   ./submit_sweep_jeanzay.sh 100 5 10 $PREV_SWEEP     # extend sweep, seeds 10-14
 set -euo pipefail
 
 N_CONFIGS="${1:-100}"
 N_SEEDS="${2:-5}"
+SEED_OFFSET="${3:-0}"
+EXISTING_SWEEP_ROOT="${4:-}"
+
 TOTAL=$(( N_CONFIGS * N_SEEDS ))
 LAST=$(( TOTAL - 1 ))
 
 PROJECT="$WORK/protein_classification"
 DATA="$WORK/ssl_graphs_1k_geom_enriched_ri"
 ACCOUNT="acu@v100"
-SWEEP_ROOT="$PROJECT/runs/sweep_$(date +%Y%m%d_%H%M%S)"
-# logs/ must exist before sbatch so SLURM can open the output files immediately
-mkdir -p "$SWEEP_ROOT/results" "$PROJECT/logs"
+mkdir -p "$PROJECT/logs"
 cd "$PROJECT"
 
-echo "sweep root : $SWEEP_ROOT"
-echo "tasks      : $N_CONFIGS configs x $N_SEEDS seeds = $TOTAL  (array 0-$LAST)"
+# ---- sweep root: reuse existing or create new ----
+if [ -n "$EXISTING_SWEEP_ROOT" ]; then
+    SWEEP_ROOT="$EXISTING_SWEEP_ROOT"
+    [ -f "$SWEEP_ROOT/configs.json" ] || { echo "ERROR: $SWEEP_ROOT/configs.json not found"; exit 1; }
+    echo "extending sweep : $SWEEP_ROOT  (reusing configs.json)"
+else
+    SWEEP_ROOT="$PROJECT/runs/sweep_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$SWEEP_ROOT/results"
+fi
 
-# ---------- Step 1: generate configs (CPU only, fast, deterministic) ----------
-module purge
-module load pytorch-gpu/py3/2.8.0
-source "$WORK/myvenv/bin/activate"
-python -u optuna_search_ri_hiernet.py \
-  --mode gen --n-configs "$N_CONFIGS" --n-seeds "$N_SEEDS" \
-  --configs-file "$SWEEP_ROOT/configs.json"
-[ -f "$SWEEP_ROOT/configs.json" ] || { echo "config generation failed"; exit 1; }
+echo "sweep root  : $SWEEP_ROOT"
+echo "tasks       : $N_CONFIGS configs x $N_SEEDS seeds = $TOTAL  (array 0-$LAST)"
+echo "seed range  : $SEED_OFFSET .. $(( SEED_OFFSET + N_SEEDS - 1 ))"
+
+# ---------- Step 1: generate configs (skipped when extending) ----------
+if [ -z "$EXISTING_SWEEP_ROOT" ]; then
+    module purge
+    module load pytorch-gpu/py3/2.8.0
+    source "$WORK/myvenv/bin/activate"
+    python -u optuna_search_ri_hiernet.py \
+      --mode gen --n-configs "$N_CONFIGS" --n-seeds "$N_SEEDS" \
+      --configs-file "$SWEEP_ROOT/configs.json"
+    [ -f "$SWEEP_ROOT/configs.json" ] || { echo "config generation failed"; exit 1; }
+fi
 
 # ---------- Step 2: submit the training array ----------
+# Pass SWEEP_ROOT and SEED_OFFSET as positional args to the slurm script.
 ARRAY_JID=$(sbatch --parsable \
   --job-name=RIHIER_SWEEP \
   --array=0-${LAST} \
   --output="$PROJECT/logs/log_%x_%A_%a.out" \
   --error="$PROJECT/logs/log_%x_%A_%a.err" \
-  slurm_sweep_jeanzay.slurm "$SWEEP_ROOT")
+  slurm_sweep_jeanzay.slurm "$SWEEP_ROOT" "$SEED_OFFSET")
 echo "submitted array job : $ARRAY_JID"
 
 # ---------- Step 3: aggregate after the array finishes ----------
-# afterok fires only if all tasks succeed; use afterany so a few OOM/failed
-# tasks still let the summary run over whatever completed.
 AGG_JID=$(sbatch --parsable \
   --job-name=RIHIER_AGG \
   --dependency=afterany:${ARRAY_JID} \

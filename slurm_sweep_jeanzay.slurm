@@ -26,6 +26,7 @@ set -x
 
 N_SEEDS=5
 SWEEP_ROOT="${1:?pass SWEEP_ROOT as arg1 (dir holding configs.json)}"
+SEED_OFFSET="${2:-0}"
 
 # ---- optional loggers ----
 # TensorBoard: always on (writes to $SWEEP_ROOT/tb/<run>/)
@@ -50,8 +51,8 @@ DATA="$WORK/ssl_graphs_1k_geom_enriched_ri"
 cd "$PROJECT"
 
 CONFIG_ID=$(( SLURM_ARRAY_TASK_ID / N_SEEDS ))
-SEED_ID=$(( SLURM_ARRAY_TASK_ID % N_SEEDS ))
-echo "task ${SLURM_ARRAY_TASK_ID} -> config ${CONFIG_ID} seed ${SEED_ID} on $(hostname)"
+SEED_ID=$(( SLURM_ARRAY_TASK_ID % N_SEEDS + SEED_OFFSET ))
+echo "task ${SLURM_ARRAY_TASK_ID} -> config ${CONFIG_ID} seed ${SEED_ID} (offset=${SEED_OFFSET}) on $(hostname)"
 nvidia-smi -L || { echo "no GPU"; exit 1; }
 
 # Stagger the start so 500 tasks don't open ~9k Lustre files at the same instant.
