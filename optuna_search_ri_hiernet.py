@@ -62,6 +62,17 @@ from ri_hiernet import RIHierNet
 RADII = (0.10, 0.20, 0.40, 0.80)
 LOCAL_BACKBONES = ("gin", "gat", "sage")        # use patch_knn; the rest are full-attention
 
+# Metrics for which we save a separate best checkpoint.
+# (metric_key_in_run_epoch_output, short_name_used_in_filename)
+CKPT_METRICS = [
+    ("accuracy",          "acc"),
+    ("balanced_accuracy", "balacc"),
+    ("f1_macro",          "f1macro"),
+    ("f1_weighted",       "f1weighted"),
+    ("f1_micro",          "f1micro"),
+    ("map_macro",         "map"),
+]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # In-RAM caching wrapper (augmentation lives in collate, so caching __getitem__
@@ -154,24 +165,25 @@ def build_model(params: dict, num_classes: int) -> RIHierNet:
 
 
 def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
-                test_ds=None, on_epoch=None, tag="", history_file=None):
+                test_ds=None, on_epoch=None, tag="", history_file=None, ckpt_prefix=None):
     """Train one config for args.search_epochs and return its metrics dict.
     on_epoch(ep, val_sel) is called each epoch (search mode uses it to prune).
-    If test_ds is given, evaluate the best-val checkpoint on test once.
-    If history_file is given, write a CSV with per-epoch metrics."""
+    If test_ds is given, evaluate the best-val checkpoint (by select_metric) on test.
+    If history_file is given, write a per-epoch CSV.
+    If ckpt_prefix is given, save one .pt checkpoint per metric in CKPT_METRICS."""
     torch.manual_seed(train_seed); np.random.seed(train_seed)
     train_collate = make_collate(0.0, params["aug_dropout"], params["aug_scale"], 0.0, training=True)
-    eval_collate = make_collate(training=False)
-    train_loader = DataLoader(tr_ds, batch_size=args.batch_size, shuffle=True,
-                              num_workers=args.num_workers, collate_fn=train_collate,
-                              drop_last=True, pin_memory=True)
-    val_loader = DataLoader(va_ds, batch_size=args.batch_size, shuffle=False,
-                            num_workers=args.num_workers, collate_fn=eval_collate, pin_memory=True)
+    eval_collate  = make_collate(training=False)
+    train_loader  = DataLoader(tr_ds, batch_size=args.batch_size, shuffle=True,
+                               num_workers=args.num_workers, collate_fn=train_collate,
+                               drop_last=True, pin_memory=True)
+    val_loader    = DataLoader(va_ds, batch_size=args.batch_size, shuffle=False,
+                               num_workers=args.num_workers, collate_fn=eval_collate, pin_memory=True)
 
-    model = build_model(params, num_classes).to(device)
+    model  = build_model(params, num_classes).to(device)
     n_params = sum(p.numel() for p in model.parameters())
-    crit = nn.CrossEntropyLoss(label_smoothing=params["label_smoothing"])
-    opt = torch.optim.AdamW(model.parameters(), lr=params["lr"], weight_decay=params["weight_decay"])
+    crit   = nn.CrossEntropyLoss(label_smoothing=params["label_smoothing"])
+    opt    = torch.optim.AdamW(model.parameters(), lr=params["lr"], weight_decay=params["weight_decay"])
     warmup, total = args.warmup_epochs, args.search_epochs
     def lr_lambda(ep):
         if ep < warmup:
@@ -180,6 +192,12 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
         return 0.5 * (1 + math.cos(math.pi * prog))
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
+    # ---- per-metric best tracking ----
+    best_vals   = {mkey: -1.0  for mkey, _ in CKPT_METRICS}
+    best_eps    = {mkey: -1    for mkey, _ in CKPT_METRICS}
+    best_states = {mkey: None  for mkey, _ in CKPT_METRICS}
+
+    # ---- CSV history ----
     _csv_fh = _csv_writer = None
     if history_file is not None:
         Path(history_file).parent.mkdir(parents=True, exist_ok=True)
@@ -187,47 +205,55 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
         _csv_writer = csv.writer(_csv_fh)
         _csv_writer.writerow([
             "epoch", "lr",
-            # train
             "tr_loss",
             "tr_acc", "tr_balacc",
             "tr_f1_micro", "tr_f1_macro", "tr_f1_weighted",
             "tr_prec_micro", "tr_prec_macro", "tr_prec_weighted",
             "tr_rec_micro",  "tr_rec_macro",  "tr_rec_weighted",
             "tr_map_macro",  "tr_map_weighted",
-            # val
             "val_loss",
             "val_acc", "val_balacc",
             "val_f1_micro", "val_f1_macro", "val_f1_weighted",
             "val_prec_micro", "val_prec_macro", "val_prec_weighted",
             "val_rec_micro",  "val_rec_macro",  "val_rec_weighted",
             "val_map_macro",  "val_map_weighted",
-            "is_best",
+            "is_best_sel",
+            *[f"is_best_{s}" for _, s in CKPT_METRICS],
         ])
 
-    t0, best, best_ep, best_state = time.time(), -1.0, -1, None
+    t0 = time.time()
+    def _snap(): return {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+
     for ep in range(args.search_epochs):
-        tr = run_epoch(model, train_loader, crit, device, opt, use_chem=True, desc="")
-        va = run_epoch(model, val_loader, crit, device, None, use_chem=True, desc="")
+        tr = run_epoch(model, train_loader, crit, device, opt,  use_chem=True, desc="")
+        va = run_epoch(model, val_loader,   crit, device, None, use_chem=True, desc="")
         sched.step()
         lr_now = opt.param_groups[0]["lr"]
-        sel = va[args.select_metric]
-        is_best = sel > best
-        if is_best:
-            best, best_ep = sel, ep
-            if test_ds is not None:
-                best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+
+        # update per-metric bests
+        snap_cache = None
+        for mkey, _ in CKPT_METRICS:
+            val = va.get(mkey, float("nan"))
+            if not math.isnan(val) and val > best_vals[mkey]:
+                best_vals[mkey] = val
+                best_eps[mkey]  = ep
+                if snap_cache is None:
+                    snap_cache = _snap()         # compute state snapshot once per epoch
+                best_states[mkey] = snap_cache
+
+        sel     = va[args.select_metric]
+        is_best = sel > best_vals.get(args.select_metric, -1.0)   # already updated above
+
         if _csv_writer is not None:
             def _fmt(d, key): return f"{d.get(key, float('nan')):.4f}"
             _csv_writer.writerow([
                 ep, f"{lr_now:.6e}",
-                # train
                 _fmt(tr, "loss"),
                 _fmt(tr, "accuracy"),          _fmt(tr, "balanced_accuracy"),
                 _fmt(tr, "f1_micro"),          _fmt(tr, "f1_macro"),          _fmt(tr, "f1_weighted"),
                 _fmt(tr, "precision_micro"),   _fmt(tr, "precision_macro"),   _fmt(tr, "precision_weighted"),
                 _fmt(tr, "recall_micro"),      _fmt(tr, "recall_macro"),      _fmt(tr, "recall_weighted"),
                 _fmt(tr, "map_macro"),         _fmt(tr, "map_weighted"),
-                # val
                 _fmt(va, "loss"),
                 _fmt(va, "accuracy"),          _fmt(va, "balanced_accuracy"),
                 _fmt(va, "f1_micro"),          _fmt(va, "f1_macro"),          _fmt(va, "f1_weighted"),
@@ -235,28 +261,57 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
                 _fmt(va, "recall_micro"),      _fmt(va, "recall_macro"),      _fmt(va, "recall_weighted"),
                 _fmt(va, "map_macro"),         _fmt(va, "map_weighted"),
                 int(is_best),
+                *[int(snap_cache is not None and best_eps[mk] == ep) for mk, _ in CKPT_METRICS],
             ])
+
+        improved = [s for mk, s in CKPT_METRICS if best_eps[mk] == ep]
         print(f"ep {ep:3d}  lr={lr_now:.2e}  "
-              f"tr_loss={tr['loss']:.4f}  tr_acc={tr['accuracy']:.4f}  tr_mf1={tr['f1_macro']:.4f}  "
+              f"tr_loss={tr['loss']:.4f}  tr_acc={tr['accuracy']:.4f}  "
               f"val_acc={va['accuracy']:.4f}  val_balacc={va['balanced_accuracy']:.4f}  "
               f"val_mf1={va['f1_macro']:.4f}  val_map={va.get('map_macro', float('nan')):.4f}"
-              + ("  *best*" if is_best else ""), flush=True)
+              + (f"  *best:{','.join(improved)}*" if improved else ""), flush=True)
+
         if on_epoch is not None:
             on_epoch(ep, sel)                                # may raise optuna.TrialPruned
 
     if _csv_fh is not None:
         _csv_fh.close()
 
-    out = {"val_best": best, "val_best_epoch": best_ep,
-           "n_params": int(n_params), "seconds": round(time.time() - t0, 1)}
+    # ---- save per-metric checkpoints to disk ----
+    if ckpt_prefix is not None:
+        ckpt_prefix = Path(ckpt_prefix)
+        ckpt_prefix.parent.mkdir(parents=True, exist_ok=True)
+        for mkey, short in CKPT_METRICS:
+            if best_states[mkey] is not None:
+                torch.save({
+                    "state_dict": best_states[mkey],
+                    "epoch":      best_eps[mkey],
+                    "metric":     mkey,
+                    "value":      best_vals[mkey],
+                    "params":     params,
+                    "num_classes": num_classes,
+                }, f"{ckpt_prefix}_best_{short}.pt")
+        print(f"checkpoints saved -> {ckpt_prefix}_best_{{acc,balacc,f1macro,...}}.pt")
+
+    # ---- test evaluation using best select_metric checkpoint ----
+    sel_key = args.select_metric
+    out = {"val_best": best_vals.get(sel_key, -1.0),
+           "val_best_epoch": best_eps.get(sel_key, -1),
+           "n_params": int(n_params), "seconds": round(time.time() - t0, 1),
+           **{f"val_best_{s}": best_vals[mk] for mk, s in CKPT_METRICS},
+           **{f"val_best_{s}_ep": best_eps[mk] for mk, s in CKPT_METRICS}}
     if test_ds is not None:
-        if best_state is not None:
-            model.load_state_dict(best_state)
+        sel_state = best_states.get(sel_key)
+        if sel_state is not None:
+            model.load_state_dict(sel_state)
         test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False,
                                  num_workers=args.num_workers, collate_fn=eval_collate, pin_memory=True)
         te = run_epoch(model, test_loader, crit, device, None, use_chem=True, desc="")
         out.update({"test_acc": te["accuracy"], "test_wf1": te["f1_weighted"],
-                    "test_mf1": te["f1_macro"], "test_balacc": te["balanced_accuracy"]})
+                    "test_mf1": te["f1_macro"], "test_balacc": te["balanced_accuracy"],
+                    "test_map": te.get("map_macro", float("nan")),
+                    "test_prec_macro": te["precision_macro"],
+                    "test_rec_macro":  te["recall_macro"]})
     return out
 
 
@@ -320,11 +375,12 @@ def cmd_train(args, device):
     test_ds = build_test_dataset(args) if args.eval_test else None
 
     rdir = Path(args.result_dir); rdir.mkdir(parents=True, exist_ok=True)
+    base  = rdir / f"cfg{args.config_id:03d}_seed{args.seed_id}"
     hfile = rdir / f"cfg{args.config_id:03d}_seed{args.seed_id}_history.csv"
     result = {"config_id": args.config_id, "seed": args.seed_id, "params": params}
     try:
         res = train_model(params, args.seed_id, tr_ds, va_ds, num_classes, device, args,
-                          test_ds=test_ds, history_file=hfile)
+                          test_ds=test_ds, history_file=hfile, ckpt_prefix=base)
         result.update(res); result["status"] = "ok"
     except RuntimeError as e:
         torch.cuda.empty_cache()
