@@ -43,7 +43,7 @@ Example
       --output-dir runs/optuna_ri --study-name ri_hiernet_v1
 """
 from __future__ import annotations
-import argparse, json, math, time, sys
+import argparse, json, math, time, sys, os
 from pathlib import Path
 from datetime import datetime
 
@@ -225,9 +225,16 @@ def main():
                     choices=["accuracy", "f1_weighted", "f1_macro", "balanced_accuracy"])
     ap.add_argument("--timeout", type=int, default=None, help="optional wall-clock budget (s)")
     ap.add_argument("--device", type=int, default=0)
-    # bookkeeping
+    # bookkeeping / distributed storage
     ap.add_argument("--output-dir", default="/home/ogharbi/projects/protein_classification/runs")
     ap.add_argument("--study-name", default=None)
+    ap.add_argument("--journal-file", default=None,
+                    help="shared Optuna journal file for multi-worker (Slurm array) "
+                         "search on Lustre/NFS. If unset, falls back to a local SQLite db. "
+                         "Uses a symlink-based file lock (safe on Lustre).")
+    ap.add_argument("--worker-id", type=int, default=None,
+                    help="distinct id per parallel worker so each explores a different "
+                         "TPE seed. Defaults to $SLURM_ARRAY_TASK_ID, else 0.")
     args = ap.parse_args()
 
     root = Path(args.data_dir)
@@ -235,20 +242,38 @@ def main():
     if args.train_labels_csv is None: args.train_labels_csv = str(root / "pc" / "train_labels.csv")
     if args.test_labels_csv is None:  args.test_labels_csv = str(root / "pc" / "test_labels.csv")
 
-    torch.manual_seed(args.seed); np.random.seed(args.seed)
+    # per-worker id (Slurm array task) → distinct TPE seed so parallel workers
+    # don't all propose the same configs before any trial has completed.
+    worker_id = (args.worker_id if args.worker_id is not None
+                 else int(os.environ.get("SLURM_ARRAY_TASK_ID", 0)))
+    worker_seed = args.seed + 1000 * worker_id
+
+    torch.manual_seed(worker_seed); np.random.seed(worker_seed)
     device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() else "cpu")
     study_name = args.study_name or f"ri_hiernet_optuna_{datetime.now():%Y%m%d_%H%M%S}"
     out_dir = Path(args.output_dir) / study_name
     out_dir.mkdir(parents=True, exist_ok=True)
-    storage = f"sqlite:///{out_dir / 'study.db'}"
-    print(f"study={study_name}  device={device}  storage={storage}")
+
+    # Shared journal storage (Lustre/NFS-safe) for Slurm-array search; else SQLite.
+    if args.journal_file:
+        from optuna.storages import JournalStorage
+        from optuna.storages.journal import JournalFileBackend, JournalFileSymlinkLock
+        Path(args.journal_file).parent.mkdir(parents=True, exist_ok=True)
+        storage = JournalStorage(JournalFileBackend(
+            args.journal_file, lock_obj=JournalFileSymlinkLock(args.journal_file)))
+        storage_desc = f"journal:{args.journal_file}"
+    else:
+        storage = f"sqlite:///{out_dir / 'study.db'}"
+        storage_desc = storage
+    print(f"study={study_name}  device={device}  worker={worker_id}(seed={worker_seed})")
+    print(f"storage={storage_desc}")
     print(f"graph-dir={args.graph_dir}")
     print(f"search: {args.n_trials} trials x {args.search_epochs} ep, "
           f"select by val '{args.select_metric}', batch={args.batch_size}")
 
     tr_ds, va_ds, num_classes = build_datasets(args)
 
-    sampler = TPESampler(seed=args.seed, multivariate=True, group=True)
+    sampler = TPESampler(seed=worker_seed, multivariate=True, group=True)
     pruner = HyperbandPruner(min_resource=8, max_resource=args.search_epochs, reduction_factor=3)
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner,
                                 study_name=study_name, storage=storage, load_if_exists=True)
@@ -257,8 +282,13 @@ def main():
     study.optimize(objective, n_trials=args.n_trials, timeout=args.timeout,
                    gc_after_trial=True, show_progress_bar=False)
 
-    # ── report ──
-    best = study.best_trial
+    # ── report ── (a parallel worker may exit before any trial of its own
+    # completes; the shared study still has the global best across all workers)
+    try:
+        best = study.best_trial
+    except ValueError:
+        print("\nno completed trial visible yet from this worker; skipping summary.")
+        return
     print("\n" + "=" * 70)
     print(f"BEST trial #{best.number}: val {args.select_metric} = {best.value:.4f}")
     print("params:")
