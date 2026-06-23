@@ -27,6 +27,15 @@ set -x
 N_SEEDS=5
 SWEEP_ROOT="${1:?pass SWEEP_ROOT as arg1 (dir holding configs.json)}"
 
+# ---- optional loggers ----
+# TensorBoard: always on (writes to $SWEEP_ROOT/tb/<run>/)
+# W&B: set WANDB_PROJECT to your project name to enable, leave empty to disable
+WANDB_PROJECT=""   # e.g. "ri-hiernet-sweep"
+WANDB_ARGS=""
+if [ -n "$WANDB_PROJECT" ]; then
+  WANDB_ARGS="--wandb-project $WANDB_PROJECT --wandb-group $(basename $SWEEP_ROOT)"
+fi
+
 # ---------- Environment ----------
 module purge
 module load pytorch-gpu/py3/2.8.0
@@ -63,6 +72,8 @@ srun python -u optuna_search_ri_hiernet.py \
   --batch-size    64 \
   --num-workers   0 \
   --select-metric accuracy \
-  --eval-test
+  --eval-test \
+  --tb-dir "$SWEEP_ROOT/tb" \
+  $WANDB_ARGS
 
 echo "task ${SLURM_ARRAY_TASK_ID} done -> $SWEEP_ROOT/results/cfg$(printf %03d $CONFIG_ID)_seed${SEED_ID}.json"

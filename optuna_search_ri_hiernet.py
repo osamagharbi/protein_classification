@@ -164,13 +164,33 @@ def build_model(params: dict, num_classes: int) -> RIHierNet:
                      readout=params["readout"])
 
 
+def _make_tb_writer(log_dir):
+    try:
+        from torch.utils.tensorboard import SummaryWriter
+        return SummaryWriter(log_dir=str(log_dir))
+    except Exception as e:
+        print(f"[warn] TensorBoard unavailable: {e}"); return None
+
+
+def _make_wb_run(project, entity, group, run_name, config):
+    try:
+        import wandb
+        return wandb.init(project=project, entity=entity or None, group=group or None,
+                          name=run_name, config=config, reinit=True)
+    except Exception as e:
+        print(f"[warn] W&B unavailable: {e}"); return None
+
+
 def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
-                test_ds=None, on_epoch=None, tag="", history_file=None, ckpt_prefix=None):
+                test_ds=None, on_epoch=None, tag="", history_file=None,
+                ckpt_prefix=None, tb_log_dir=None, wb_run=None):
     """Train one config for args.search_epochs and return its metrics dict.
     on_epoch(ep, val_sel) is called each epoch (search mode uses it to prune).
     If test_ds is given, evaluate the best-val checkpoint (by select_metric) on test.
     If history_file is given, write a per-epoch CSV.
-    If ckpt_prefix is given, save one .pt checkpoint per metric in CKPT_METRICS."""
+    If ckpt_prefix is given, save one .pt checkpoint per metric in CKPT_METRICS.
+    If tb_log_dir is given, write TensorBoard scalars.
+    If wb_run is given, log to that W&B run."""
     torch.manual_seed(train_seed); np.random.seed(train_seed)
     train_collate = make_collate(0.0, params["aug_dropout"], params["aug_scale"], 0.0, training=True)
     eval_collate  = make_collate(training=False)
@@ -220,6 +240,8 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
             "is_best_sel",
             *[f"is_best_{s}" for _, s in CKPT_METRICS],
         ])
+
+    tb_writer = _make_tb_writer(tb_log_dir) if tb_log_dir else None
 
     t0 = time.time()
     def _snap(): return {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
@@ -271,11 +293,45 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
               f"val_mf1={va['f1_macro']:.4f}  val_map={va.get('map_macro', float('nan')):.4f}"
               + (f"  *best:{','.join(improved)}*" if improved else ""), flush=True)
 
+        # ---- external loggers ----
+        log_dict = {
+            "lr": lr_now,
+            "train/loss":           tr["loss"],
+            "train/acc":            tr["accuracy"],
+            "train/balacc":         tr["balanced_accuracy"],
+            "train/f1_micro":       tr["f1_micro"],
+            "train/f1_macro":       tr["f1_macro"],
+            "train/f1_weighted":    tr["f1_weighted"],
+            "train/prec_macro":     tr["precision_macro"],
+            "train/rec_macro":      tr["recall_macro"],
+            "train/map_macro":      tr.get("map_macro", float("nan")),
+            "val/loss":             va["loss"],
+            "val/acc":              va["accuracy"],
+            "val/balacc":           va["balanced_accuracy"],
+            "val/f1_micro":         va["f1_micro"],
+            "val/f1_macro":         va["f1_macro"],
+            "val/f1_weighted":      va["f1_weighted"],
+            "val/prec_macro":       va["precision_macro"],
+            "val/rec_macro":        va["recall_macro"],
+            "val/map_macro":        va.get("map_macro", float("nan")),
+        }
+        if tb_writer is not None:
+            for k, v in log_dict.items():
+                if not math.isnan(v):
+                    tb_writer.add_scalar(k, v, ep)
+        if wb_run is not None:
+            try:
+                wb_run.log({**log_dict, "epoch": ep})
+            except Exception:
+                pass
+
         if on_epoch is not None:
             on_epoch(ep, sel)                                # may raise optuna.TrialPruned
 
     if _csv_fh is not None:
         _csv_fh.close()
+    if tb_writer is not None:
+        tb_writer.close()
 
     # ---- save per-metric checkpoints to disk ----
     if ckpt_prefix is not None:
@@ -312,6 +368,22 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
                     "test_map": te.get("map_macro", float("nan")),
                     "test_prec_macro": te["precision_macro"],
                     "test_rec_macro":  te["recall_macro"]})
+        if wb_run is not None:
+            try:
+                wb_run.summary.update({
+                    "test/acc":       te["accuracy"],
+                    "test/balacc":    te["balanced_accuracy"],
+                    "test/f1_macro":  te["f1_macro"],
+                    "test/f1_weighted": te["f1_weighted"],
+                    "test/map_macro": te.get("map_macro", float("nan")),
+                    "test/prec_macro": te["precision_macro"],
+                    "test/rec_macro":  te["recall_macro"],
+                })
+            except Exception:
+                pass
+    if wb_run is not None:
+        try: wb_run.finish()
+        except Exception: pass
     return out
 
 
@@ -375,12 +447,29 @@ def cmd_train(args, device):
     test_ds = build_test_dataset(args) if args.eval_test else None
 
     rdir = Path(args.result_dir); rdir.mkdir(parents=True, exist_ok=True)
-    base  = rdir / f"cfg{args.config_id:03d}_seed{args.seed_id}"
-    hfile = rdir / f"cfg{args.config_id:03d}_seed{args.seed_id}_history.csv"
+    run_name = f"cfg{args.config_id:03d}_seed{args.seed_id}"
+    base  = rdir / run_name
+    hfile = rdir / f"{run_name}_history.csv"
+
+    # ---- optional loggers ----
+    tb_log_dir = None
+    if getattr(args, "tb_dir", None):
+        tb_log_dir = Path(args.tb_dir) / run_name
+    wb_run = None
+    if getattr(args, "wandb_project", None):
+        wb_run = _make_wb_run(
+            project  = args.wandb_project,
+            entity   = getattr(args, "wandb_entity", None),
+            group    = getattr(args, "wandb_group", None),
+            run_name = run_name,
+            config   = {**params, "config_id": args.config_id, "seed_id": args.seed_id},
+        )
+
     result = {"config_id": args.config_id, "seed": args.seed_id, "params": params}
     try:
         res = train_model(params, args.seed_id, tr_ds, va_ds, num_classes, device, args,
-                          test_ds=test_ds, history_file=hfile, ckpt_prefix=base)
+                          test_ds=test_ds, history_file=hfile, ckpt_prefix=base,
+                          tb_log_dir=tb_log_dir, wb_run=wb_run)
         result.update(res); result["status"] = "ok"
     except RuntimeError as e:
         torch.cuda.empty_cache()
@@ -578,6 +667,14 @@ def main():
                     help="[search] shared Optuna journal (Lustre-safe symlink lock)")
     ap.add_argument("--worker-id", type=int, default=None,
                     help="[search] distinct TPE seed per worker; default $SLURM_ARRAY_TASK_ID")
+    # logging
+    ap.add_argument("--wandb-project", default=None,
+                    help="[train] W&B project name; omit to disable W&B logging")
+    ap.add_argument("--wandb-entity",  default=None, help="[train] W&B entity/team")
+    ap.add_argument("--wandb-group",   default=None,
+                    help="[train] W&B run group (use sweep timestamp to group all tasks)")
+    ap.add_argument("--tb-dir", default=None,
+                    help="[train] root dir for TensorBoard logs; one subdir per run")
     args = ap.parse_args()
 
     root = Path(args.data_dir)
