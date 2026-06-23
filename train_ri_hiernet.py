@@ -37,9 +37,23 @@ from sklearn.metrics import f1_score, recall_score, accuracy_score
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-from classify_gnn import load_labels, canonical_graph_id, resolve_split_dir
 from fix_training import compute_class_weights, create_robust_train_val_split
 from ri_hiernet import RIHierNet
+
+_PATCHGRAPH_SUFFIX_RE = re.compile(r'_patchgraph_k\d+_graph_label_\d+$')
+
+def canonical_graph_id(graph_id: str) -> str:
+    gid = str(graph_id)
+    if gid.endswith('_graph'):
+        gid = gid[:-6]
+    return _PATCHGRAPH_SUFFIX_RE.sub('', gid)
+
+def resolve_split_dir(root_dir, split):
+    root = Path(root_dir)
+    for c in [root / split, root / f'{split}_set']:
+        if c.exists():
+            return c
+    return root / split
 
 
 # ─────────────────────────────────────────────────────────────────────────────
