@@ -36,6 +36,7 @@ from sklearn.metrics import (
     f1_score, recall_score, accuracy_score,
     precision_score, average_precision_score,
 )
+from sklearn.preprocessing import label_binarize
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -230,10 +231,12 @@ def metrics(y_true, y_pred, y_prob=None):
     }
     if y_prob is not None:
         try:
-            m["map_macro"]    = float(average_precision_score(
-                y_true, y_prob, average="macro",    labels=valid))
-            m["map_weighted"] = float(average_precision_score(
-                y_true, y_prob, average="weighted", labels=valid))
+            # average_precision_score has no multiclass mode: binarize y_true over
+            # the classes present, and take the matching softmax columns.
+            Y = label_binarize(y_true, classes=valid)        # (N, len(valid))
+            P = np.asarray(y_prob)[:, valid]                 # same columns
+            m["map_macro"]    = float(average_precision_score(Y, P, average="macro"))
+            m["map_weighted"] = float(average_precision_score(Y, P, average="weighted"))
         except Exception:
             m["map_macro"] = m["map_weighted"] = float("nan")
     return m
