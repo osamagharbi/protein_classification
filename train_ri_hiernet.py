@@ -138,14 +138,32 @@ def grouped_train_val_split(dataset, val_split=0.2, seed=42, min_groups_for_stra
     return tr_idx, va_idx
 
 
-def make_collate(jitter: float = 0.0):
+def make_collate(jitter: float = 0.0, dropout: float = 0.0,
+                 scale: float = 0.0, shift: float = 0.0, training: bool = True):
+    """Collate with optional RIConv2-style augmentations (applied only during training).
+
+    dropout: probability each point is zeroed (set pos/normal to 0)
+    scale:   max relative scale perturbation, i.e. scale ~ Uniform(1-s, 1+s)
+    shift:   max absolute xyz shift, i.e. t ~ Uniform(-s, s) per axis
+    """
     def collate(batch):
-        pos = torch.stack([b[0] for b in batch])
+        pos = torch.stack([b[0] for b in batch])      # [B,N,3]
         normal = torch.stack([b[1] for b in batch])
         chem = torch.stack([b[2] for b in batch])
         y = torch.tensor([b[3] for b in batch], dtype=torch.long)
         if jitter > 0:
             pos = pos + torch.randn_like(pos) * jitter
+        if training:
+            if dropout > 0:
+                mask = torch.rand(pos.shape[0], pos.shape[1], 1) > dropout
+                pos = pos * mask.float()
+                normal = normal * mask.float()
+            if scale > 0:
+                s = 1.0 + (torch.rand(pos.shape[0], 1, 1) * 2 - 1) * scale
+                pos = pos * s
+            if shift > 0:
+                t = (torch.rand(pos.shape[0], 1, 3) * 2 - 1) * shift
+                pos = pos + t
         return pos, normal, chem, y
     return collate
 
@@ -230,6 +248,14 @@ def main():
     ap.add_argument("--nsample", type=int, default=32)
     ap.add_argument("--patch-knn", type=int, default=8)
     ap.add_argument("--patch-layers", type=int, default=2)
+    ap.add_argument("--patch-backbone", default="gin",
+                    choices=["gin", "gat", "sage", "transformer", "graphormer"],
+                    help="patch-stage GNN: gin (default) | gat (kNN attention) | "
+                         "sage (GraphSAGE mean) | transformer (full self-attention) | "
+                         "graphormer (full attention + invariant distance bias)")
+    ap.add_argument("--readout", default="max+attn",
+                    help="'+'-joined graph pooling over 64 patches; atoms: "
+                         "max|mean|min|sum|attn. e.g. 'max', 'mean+max', 'max+attn' (default)")
     ap.add_argument("--radii", default="0.10,0.20,0.40,0.80")
     ap.add_argument("--dropout", type=float, default=0.3)
     # optim
@@ -240,14 +266,22 @@ def main():
     ap.add_argument("--lr", type=float, default=5e-4)
     ap.add_argument("--weight-decay", type=float, default=1e-4)
     ap.add_argument("--warmup-epochs", type=int, default=5)
-    ap.add_argument("--label-smoothing", type=float, default=0.1)
+    ap.add_argument("--label-smoothing", type=float, default=0.0)
     ap.add_argument("--class-weight-method", default="none",
                     help="'none' (best for accuracy/weighted-F1) or e.g. inverse_sqrt")
     ap.add_argument("--select-metric", default="accuracy",
                     choices=["accuracy", "f1_weighted", "f1_macro", "balanced_accuracy"],
                     help="val metric used for checkpoint selection / early stopping")
     ap.add_argument("--supcon-weight", type=float, default=0.0)
-    ap.add_argument("--aug-jitter", type=float, default=0.0)
+    ap.add_argument("--aug-jitter",   type=float, default=0.0)
+    ap.add_argument("--aug-dropout", type=float, default=0.0,
+                    help="point dropout probability (RIConv2 style)")
+    ap.add_argument("--aug-scale",   type=float, default=0.0,
+                    help="max relative scale perturbation, e.g. 0.2 → scale in [0.8,1.2]")
+    ap.add_argument("--aug-shift",   type=float, default=0.0,
+                    help="max absolute xyz shift per axis, e.g. 0.1")
+    ap.add_argument("--width-scale", type=int, default=1,
+                    help="SA encoder width multiplier: 1=current(512D out), 2=wider(1024D out)")
     ap.add_argument("--val-split", type=float, default=0.2)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--device", type=int, default=0)
@@ -283,21 +317,28 @@ def main():
     train_ds, val_ds = Subset(full_train, tr_idx), Subset(full_train, va_idx)
     print(f"train={len(train_ds)} val={len(val_ds)} test={len(test_ds)} classes={num_classes}")
 
+    train_collate = make_collate(args.aug_jitter, args.aug_dropout, args.aug_scale,
+                                 args.aug_shift, training=True)
+    eval_collate  = make_collate(training=False)
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
-                              num_workers=args.num_workers, collate_fn=make_collate(args.aug_jitter),
+                              num_workers=args.num_workers, collate_fn=train_collate,
                               drop_last=True, pin_memory=True)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False,
-                            num_workers=args.num_workers, collate_fn=make_collate(0.0), pin_memory=True)
+                            num_workers=args.num_workers, collate_fn=eval_collate, pin_memory=True)
     test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False,
-                             num_workers=args.num_workers, collate_fn=make_collate(0.0), pin_memory=True)
+                             num_workers=args.num_workers, collate_fn=eval_collate, pin_memory=True)
 
     # ── model / loss / optim ──
     radii = tuple(float(x) for x in args.radii.split(","))
     model = RIHierNet(num_classes=num_classes, chem_dim=2, patch_knn=args.patch_knn,
                       patch_layers=args.patch_layers, dropout=args.dropout,
-                      radii=radii, nsample=args.nsample).to(device)
+                      radii=radii, nsample=args.nsample,
+                      width_scale=args.width_scale,
+                      patch_backbone=args.patch_backbone,
+                      readout=args.readout).to(device)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"params={n_params:,}  radii={radii}")
+    print(f"params={n_params:,}  radii={radii}  width_scale={args.width_scale}  "
+          f"patch_backbone={args.patch_backbone}  readout={args.readout}")
 
     # No class weighting by default: we optimise accuracy / weighted-F1, which are
     # support-weighted — up-weighting rare classes trades those away.
@@ -306,6 +347,8 @@ def main():
                                            method=args.class_weight_method))
     criterion = nn.CrossEntropyLoss(weight=weights, label_smoothing=args.label_smoothing)
     print(f"class weighting: {args.class_weight_method}  | select checkpoint by val '{args.select_metric}'")
+    print(f"augmentation: jitter={args.aug_jitter} dropout={args.aug_dropout} "
+          f"scale={args.aug_scale} shift={args.aug_shift}  label_smoothing={args.label_smoothing}")
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     warmup, total = args.warmup_epochs, args.epochs

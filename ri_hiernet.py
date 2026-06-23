@@ -182,13 +182,132 @@ class DenseGIN(nn.Module):
         )
         self.norm = nn.LayerNorm(ch)
 
-    def forward(self, h, nbr_idx):
-        # h [B,S,C], nbr_idx [B,S,K] (kNN incl. self)
+    def forward(self, h, nbr_idx, pos=None):
+        # h [B,S,C], nbr_idx [B,S,K] (kNN incl. self); pos ignored
         agg = index_points(h, nbr_idx).sum(dim=2)                # Σ_{j∈N(i)∪i} h_j
         out = self.eps * h + agg                                 # = (1+eps)h_i + Σ_{j≠i}h_j
         B, S, C = out.shape
         out = self.mlp(out.reshape(B * S, C)).reshape(B, S, C)
         return F.relu(self.norm(out + h))                        # residual
+
+
+class DenseGraphSAGE(nn.Module):
+    """GraphSAGE (mean aggregator) over the fixed kNN graph (dense tensors):
+    h_i' = ReLU( LN( W·[h_i ‖ mean_{j∈N(i)} h_j] ) + h_i )."""
+
+    def __init__(self, ch: int):
+        super().__init__()
+        self.lin = nn.Linear(2 * ch, ch)
+        self.norm = nn.LayerNorm(ch)
+
+    def forward(self, h, nbr_idx, pos=None):
+        nbr = index_points(h, nbr_idx).mean(dim=2)               # mean over neighbours
+        out = self.lin(torch.cat([h, nbr], dim=-1))
+        return F.relu(self.norm(out + h))                        # residual
+
+
+class DenseGAT(nn.Module):
+    """Multi-head GAT over the fixed kNN graph (dense tensors).
+    Attention is computed within each node's K neighbourhood, then an FFN
+    residual block follows (transformer-style). Operates on the invariant SA
+    features + invariant kNN structure, so the whole block stays SO(3)-invariant."""
+
+    def __init__(self, ch: int, heads: int = 4):
+        super().__init__()
+        assert ch % heads == 0, f"ch={ch} must be divisible by heads={heads}"
+        self.heads, self.dh = heads, ch // heads
+        self.W = nn.Linear(ch, ch)
+        self.a_src = nn.Parameter(torch.randn(heads, self.dh) * 0.1)
+        self.a_dst = nn.Parameter(torch.randn(heads, self.dh) * 0.1)
+        self.leaky = nn.LeakyReLU(0.2)
+        self.norm1 = nn.LayerNorm(ch)
+        self.ffn = nn.Sequential(nn.Linear(ch, ch), nn.GELU(), nn.Linear(ch, ch))
+        self.norm2 = nn.LayerNorm(ch)
+
+    def forward(self, h, nbr_idx, pos=None):
+        B, S, C = h.shape
+        K = nbr_idx.shape[-1]
+        H, dh = self.heads, self.dh
+        Wh = self.W(h)                                            # [B,S,C]
+        Wh_nbr = index_points(Wh, nbr_idx)                        # [B,S,K,C]
+        Wh_h = Wh.view(B, S, H, dh)                               # [B,S,H,dh]
+        Wh_nbr_h = Wh_nbr.view(B, S, K, H, dh)                    # [B,S,K,H,dh]
+        e_src = (Wh_h * self.a_src).sum(-1)                       # [B,S,H]
+        e_dst = (Wh_nbr_h * self.a_dst).sum(-1)                   # [B,S,K,H]
+        e = self.leaky(e_src.unsqueeze(2) + e_dst)               # [B,S,K,H]
+        alpha = torch.softmax(e, dim=2)                          # attention over K
+        out = (alpha.unsqueeze(-1) * Wh_nbr_h).sum(2)            # [B,S,H,dh]
+        out = out.reshape(B, S, C)
+        h = self.norm1(h + out)                                  # attn residual
+        h = self.norm2(h + self.ffn(h))                         # FFN residual
+        return h
+
+
+class DenseTransformer(nn.Module):
+    """Full multi-head self-attention over ALL patch centroids (no graph cutoff).
+    With only 64 patches, all-pairs attention is cheap and removes the arbitrary
+    kNN k. The kNN index argument is accepted but ignored (signature-compatible)."""
+
+    def __init__(self, ch: int, heads: int = 4, dropout: float = 0.0):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(ch, heads, dropout=dropout, batch_first=True)
+        self.norm1 = nn.LayerNorm(ch)
+        self.ffn = nn.Sequential(nn.Linear(ch, ch * 2), nn.GELU(), nn.Linear(ch * 2, ch))
+        self.norm2 = nn.LayerNorm(ch)
+
+    def forward(self, h, nbr_idx=None, pos=None):
+        a, _ = self.attn(h, h, h, need_weights=False)
+        h = self.norm1(h + a)                                    # attn residual
+        h = self.norm2(h + self.ffn(h))                         # FFN residual
+        return h
+
+
+class DenseGraphormer(nn.Module):
+    """Graphormer-style block: full multi-head self-attention over all patches
+    plus a *spatial encoding* bias added to the attention logits. The bias is a
+    learned per-head function of the pairwise centroid distance ‖p_i − p_j‖,
+    which is rotation+translation invariant — the continuous-geometry analogue
+    of Graphormer's shortest-path spatial encoding. (Degree centrality encoding
+    is omitted: on a kNN graph every node has ~equal degree, so it is inert.)"""
+
+    def __init__(self, ch: int, heads: int = 4, dropout: float = 0.0):
+        super().__init__()
+        assert ch % heads == 0, f"ch={ch} must be divisible by heads={heads}"
+        self.heads, self.dh = heads, ch // heads
+        self.scale = self.dh ** -0.5
+        self.qkv = nn.Linear(ch, 3 * ch)
+        self.proj = nn.Linear(ch, ch)
+        self.dist_mlp = nn.Sequential(nn.Linear(1, 32), nn.ReLU(), nn.Linear(32, heads))
+        self.norm1 = nn.LayerNorm(ch)
+        self.ffn = nn.Sequential(nn.Linear(ch, ch * 2), nn.GELU(), nn.Linear(ch * 2, ch))
+        self.norm2 = nn.LayerNorm(ch)
+
+    def forward(self, h, nbr_idx=None, pos=None):
+        B, S, C = h.shape
+        H, dh = self.heads, self.dh
+        qkv = self.qkv(h).view(B, S, 3, H, dh).permute(2, 0, 3, 1, 4)   # [3,B,H,S,dh]
+        q, k, v = qkv[0], qkv[1], qkv[2]
+        attn = (q @ k.transpose(-2, -1)) * self.scale            # [B,H,S,S]
+        if pos is not None:
+            d = torch.cdist(pos, pos).unsqueeze(-1)              # [B,S,S,1] invariant
+            bias = self.dist_mlp(d).permute(0, 3, 1, 2)         # [B,H,S,S]
+            attn = attn + bias                                   # spatial encoding
+        attn = torch.softmax(attn, dim=-1)
+        out = (attn @ v).transpose(1, 2).reshape(B, S, C)        # [B,S,C]
+        out = self.proj(out)
+        h = self.norm1(h + out)                                  # attn residual
+        h = self.norm2(h + self.ffn(h))                         # FFN residual
+        return h
+
+
+def make_patch_layer(backbone: str, ch: int):
+    if backbone == "gin":         return DenseGIN(ch)
+    if backbone == "gat":         return DenseGAT(ch)
+    if backbone == "sage":        return DenseGraphSAGE(ch)
+    if backbone == "transformer": return DenseTransformer(ch)
+    if backbone == "graphormer":  return DenseGraphormer(ch)
+    raise ValueError(f"Unknown patch backbone: {backbone!r} "
+                     f"(choose gin | gat | sage | transformer | graphormer)")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -200,25 +319,51 @@ class RIHierNet(nn.Module):
                  patch_knn: int = 8, patch_layers: int = 2,
                  proj_dim: int = 128, dropout: float = 0.3,
                  radii=(0.10, 0.20, 0.40, 0.80),
-                 npoints=(512, 256, 128, 64), nsample: int = 32):
+                 npoints=(512, 256, 128, 64), nsample: int = 32,
+                 width_scale: int = 1, patch_backbone: str = "gin",
+                 readout: str = "max+attn"):
+        """width_scale=1: SA outputs 512-D (default, ~2.2M params).
+           width_scale=2: SA outputs 1024-D (~8M params, closer to RIConv2).
+           patch_backbone: gin | gat | sage | transformer | graphormer.
+           readout: '+'-joined pooling types over the 64 patches, each
+                    contributing feat_dim to the graph embedding. Atoms:
+                    max | mean | min | sum | attn. Default 'max+attn'.
+        """
         super().__init__()
         self.chem_dim = chem_dim
         r1, r2, r3, r4 = radii
         n1, n2, n3, n4 = npoints
-        self.sa1 = RISetAbstraction(n1, r1, nsample, chem_dim, [32, 32, 64])
-        self.sa2 = RISetAbstraction(n2, r2, nsample, 64,       [64, 64, 128])
-        self.sa3 = RISetAbstraction(n3, r3, nsample, 128,      [128, 128, 256])
-        self.sa4 = RISetAbstraction(n4, r4, nsample, 256,      [256, 256, 512])
+        w = width_scale
+        # SA channel widths scale with w; base widths: 64/128/256/512
+        self.sa1 = RISetAbstraction(n1, r1, nsample, chem_dim,
+                                    [32*w, 32*w, 64*w])
+        self.sa2 = RISetAbstraction(n2, r2, nsample, 64*w,
+                                    [64*w, 64*w, 128*w])
+        self.sa3 = RISetAbstraction(n3, r3, nsample, 128*w,
+                                    [128*w, 128*w, 256*w])
+        self.sa4 = RISetAbstraction(n4, r4, nsample, 256*w,
+                                    [256*w, 256*w, 512*w])
+        feat_dim = 512 * w
 
         self.patch_knn = patch_knn
-        self.patch_gins = nn.ModuleList([DenseGIN(512) for _ in range(patch_layers)])
+        self.patch_backbone = patch_backbone
+        self.patch_gins = nn.ModuleList(
+            [make_patch_layer(patch_backbone, feat_dim) for _ in range(patch_layers)])
 
-        self.att = nn.Sequential(nn.Linear(512, 128), nn.Tanh(), nn.Linear(128, 1))
+        valid_pools = {"max", "mean", "min", "sum", "attn"}
+        self.readout_types = [r for r in readout.split("+") if r]
+        bad = set(self.readout_types) - valid_pools
+        if bad:
+            raise ValueError(f"Unknown readout pool(s): {bad} (choose from {valid_pools})")
+        if "attn" in self.readout_types:
+            self.att = nn.Sequential(nn.Linear(feat_dim, 128), nn.Tanh(), nn.Linear(128, 1))
+        readout_dim = len(self.readout_types) * feat_dim
         self.classifier = nn.Sequential(
-            nn.Linear(1024, 512), nn.GELU(), nn.Dropout(dropout),
-            nn.Linear(512, num_classes),
+            nn.Linear(readout_dim, readout_dim // 2), nn.GELU(), nn.Dropout(dropout),
+            nn.Linear(readout_dim // 2, num_classes),
         )
-        self.proj = nn.Linear(1024, proj_dim)
+        self.proj = nn.Linear(readout_dim, proj_dim)
+        self._feat_dim = feat_dim
 
     def forward(self, xyz, normal, chem=None, use_chem: bool = True):
         """xyz [B,N,3], normal [B,N,3], chem [B,N,chem_dim] (or None).
@@ -237,17 +382,23 @@ class RIHierNet(nn.Module):
         xyz, normal, feat = self.sa1(xyz, normal, feat)
         xyz, normal, feat = self.sa2(xyz, normal, feat)
         xyz, normal, feat = self.sa3(xyz, normal, feat)
-        xyz, normal, feat = self.sa4(xyz, normal, feat)          # [B,64,512]
+        xyz, normal, feat = self.sa4(xyz, normal, feat)          # [B,64,feat_dim]
 
         nbr = knn_index(min(self.patch_knn, xyz.shape[1]), xyz)
         h = feat
         for gin in self.patch_gins:
-            h = gin(h, nbr)
+            h = gin(h, nbr, xyz)                                  # xyz used only by graphormer
 
-        h_max = h.max(dim=1)[0]                                   # [B,512]
-        a = torch.softmax(self.att(h), dim=1)                    # [B,64,1]
-        h_att = (a * h).sum(dim=1)                                # [B,512]
-        g = torch.cat([h_max, h_att], dim=-1)                    # [B,1024]
+        parts = []                                               # one [B,feat_dim] per pool
+        for r in self.readout_types:
+            if r == "max":    parts.append(h.max(dim=1)[0])
+            elif r == "mean": parts.append(h.mean(dim=1))
+            elif r == "min":  parts.append(h.min(dim=1)[0])
+            elif r == "sum":  parts.append(h.sum(dim=1))
+            elif r == "attn":
+                a = torch.softmax(self.att(h), dim=1)            # [B,64,1]
+                parts.append((a * h).sum(dim=1))
+        g = torch.cat(parts, dim=-1)                             # [B, n_pools*feat_dim]
 
         return self.classifier(g), F.normalize(self.proj(g), dim=-1)
 
@@ -269,33 +420,35 @@ if __name__ == "__main__":
     torch.manual_seed(0)
     dev = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     B, N = 4, 1000
-    model = RIHierNet(num_classes=99).to(dev).eval()
-    n_params = sum(p.numel() for p in model.parameters())
-    print(f"device={dev}  params={n_params:,}")
 
     xyz = torch.randn(B, N, 3, device=dev) * 0.4
     normal = F.normalize(torch.randn(B, N, 3, device=dev), dim=-1)
     chem = torch.randn(B, N, 2, device=dev)
+    R = _random_rotation(dev)
+    t = torch.randn(1, 1, 3, device=dev) * 2.0
+    xyz_r = xyz @ R.T + t
+    normal_r = normal @ R.T
 
     # NOTE: FPS draws its seed point from the global RNG, so it is stochastic
     # by design (acts as train-time augmentation). For the invariance gate we
     # reseed identically before each pass so FPS selects the SAME physical
     # points; any residual delta is then a true RI bug, not FPS jitter.
-    with torch.no_grad():
-        torch.manual_seed(123)
-        logits, proj = model(xyz, normal, chem)
-    print(f"logits {tuple(logits.shape)}  proj {tuple(proj.shape)}")
-    assert logits.shape == (B, 99) and proj.shape == (B, 128)
-
-    # SO(3) + translation invariance: rotate xyz & normals, translate xyz
-    R = _random_rotation(dev)
-    t = torch.randn(1, 1, 3, device=dev) * 2.0
-    xyz_r = xyz @ R.T + t
-    normal_r = normal @ R.T
-    with torch.no_grad():
-        torch.manual_seed(123)
-        logits_r, _ = model(xyz_r, normal_r, chem)
-    max_dev = (logits - logits_r).abs().max().item()
-    rel = max_dev / (logits.abs().max().item() + 1e-9)
-    print(f"SO(3)+T invariance: max|Δlogit|={max_dev:.2e}  rel={rel:.2e}")
-    print("PASS ✓" if max_dev < 1e-3 else "FAIL ✗ — RI construction broken")
+    all_pass = True
+    for backbone in ("gin", "gat", "sage", "transformer", "graphormer"):
+        torch.manual_seed(0)                                     # identical init per backbone
+        model = RIHierNet(num_classes=99, patch_backbone=backbone).to(dev).eval()
+        n_params = sum(p.numel() for p in model.parameters())
+        with torch.no_grad():
+            torch.manual_seed(123)
+            logits, proj = model(xyz, normal, chem)
+            torch.manual_seed(123)
+            logits_r, _ = model(xyz_r, normal_r, chem)
+        assert logits.shape == (B, 99) and proj.shape == (B, 128)
+        max_dev = (logits - logits_r).abs().max().item()
+        rel = max_dev / (logits.abs().max().item() + 1e-9)
+        ok = max_dev < 1e-3
+        all_pass &= ok
+        print(f"patch={backbone:12s} params={n_params:>10,}  "
+              f"SO(3)+T max|Δlogit|={max_dev:.2e} rel={rel:.2e}  "
+              f"{'PASS ✓' if ok else 'FAIL ✗'}")
+    print("ALL PASS ✓" if all_pass else "SOME FAILED ✗ — RI construction broken")
