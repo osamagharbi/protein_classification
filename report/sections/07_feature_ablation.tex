@@ -268,13 +268,16 @@ macro-F1 $+$0.2\,pp (0.800 vs.\ 0.798), balanced accuracy $+$1.3\,pp
 The improvement is consistent but modest, suggesting that standard GIN can
 learn approximately rotation-invariant representations from a large enough
 training set, but hard-coding the invariance provides a reliable small gain.
-The 14D RI-GIN run is currently training (batch size 32 due to GPU memory
-constraints); results are pending.
+The 14D RI-GIN run completes at macro-F1\,=\,0.793 and balanced
+accuracy\,=\,0.807 (batch size 32 due to GPU memory constraints) ---
+\emph{below} the 14D standard GIN (0.808 macro-F1).
+We attribute the regression to the forced smaller batch size increasing
+gradient noise; hard-coded rotation invariance does not compensate on the
+richer 14D feature set.
 
 \begin{table}[h]
   \centering
-  \caption{RI-GIN vs.\ standard GIN on the same feature sets (88-class eval).
-           RI-GIN results pending.}
+  \caption{RI-GIN vs.\ standard GIN on the same feature sets (88-class eval).}
   \label{tab:rigin}
   \begin{tabular}{llrr}
     \toprule
@@ -284,7 +287,7 @@ constraints); results are pending.
     RI-GIN & 8D (all)             & \textbf{0.800} & \textbf{0.813} \\
     \midrule
     GIN    & 14D (global norm)    & 0.808 & 0.812 \\
-    RI-GIN & 14D (global norm)    & \textit{pending} & \textit{pending} \\
+    RI-GIN & 14D (global norm)    & 0.793 & 0.807 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -293,5 +296,5 @@ constraints); results are pending.
 At $h = 512$ and batch size 64, the RI-GIN edge MLP materialises $\sim$750\,MB
 per layer, making it impossible to run two experiments simultaneously on a
 12\,GB GPU.
-The 14D run is therefore launched sequentially after the 8D run completes,
+The 14D run was therefore launched sequentially after the 8D run completed,
 with batch size reduced to 32.

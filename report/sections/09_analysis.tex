@@ -153,6 +153,55 @@ pooling are too coarse to capture the relevant geometric signal.
 The path forward is adopting or integrating RIConv2-style multi-scale local
 grouping, not adding more chemical features.
 
+\subsection{First Attempt at Multi-scale RI Grouping: GeoChem-MSRINet}
+\label{sec:analysis:geochem}
+
+After the main HierGIN ablations, we implemented a first in-repository
+prototype of this direction, GeoChem-MSRINet.
+It uses nested FPS set abstraction, fixed-radius ball queries, on-the-fly
+point-pair invariant features, and a compact patch-token graph encoder.
+The implementation was deliberately self-contained and pure PyTorch because
+the available environment lacked specialised point-cloud kernels.
+
+The experiment clarified two points.
+First, the very poor initial result was not a dataset or label issue.
+The geometry-first curriculum collapsed to predicting class\,8 for every
+sample, giving test macro-F1\,=\,0.004 and accuracy\,=\,0.222.
+Class\,8 has 22.2\% support in train, validation, and test, so the metric
+matches a majority-class predictor exactly.
+CSV-to-file matching, train/validation/test disjointness, class indexing, and
+tensor source-file metadata were audited and found consistent.
+
+Second, the implementation can learn when the optimisation problem is made
+stable.
+A fixed eight-sample batch was memorised to 100\% accuracy, and a balanced
+32-sample probe reached approximately 0.833 macro-F1.
+On the full split, a chemistry-first balanced run with MLP-only logits and
+reduced patch depth reached validation macro-F1\,=\,0.765 and test
+macro-F1\,=\,0.734.
+Per-class analysis showed that combining a balanced sampler with
+inverse-square-root class weights over-corrected the imbalance: minority
+classes were over-predicted while frequent classes lost recall.
+Following the RIConv2 training recipe more closely, a second chemistry-first
+run used natural shuffled sampling and unweighted cross entropy.
+This natural-prior run selected epoch 159 by validation macro-F1 and reached
+test accuracy\,=\,0.848, weighted-F1\,=\,0.845, and macro-F1\,=\,0.752.
+The gain confirms that the dataset prior is useful for support-weighted
+metrics, but the lower test balanced accuracy (0.747) shows that rare-class
+performance remains the limiting factor.
+
+This is an important negative/diagnostic result.
+It confirms that the proposed direction is trainable in principle, but this
+prototype does \emph{not} yet capture the RIConv2 geometry-only advantage.
+The successful run required chemistry from the first epoch, whereas RIConv2
+geometry-only already reaches macro-F1\,=\,0.838.
+Thus the remaining bottleneck is still the local geometric encoder, not label
+plumbing or classifier capacity.
+The next iteration should either use optimised set-abstraction kernels
+(\texttt{torch-cluster}, PyTorch3D, or a dedicated RIConv2-style operator) or
+ablate the current ball-query/PPF implementation until geometry-only learning
+exceeds the HierGIN 8D baseline.
+
 \subsection{Why Point-cloud Methods Underperform}
 
 Mamba3D (0.672) and PointMamba (0.720) process the protein as a 3D point cloud

@@ -19,10 +19,10 @@ Table~\ref{tab:dataset_stats} summarises the key statistics.
     \textbf{Property} & \textbf{Value} & \textbf{Notes} \\
     \midrule
     Total classes          & 99  & SCOP fold families \\
-    Training proteins      & 9\,244  & 97 classes represented \\
+    Training proteins      & 9\,244  & 99 classes represented \\
     Test proteins          & 2\,311  & 88 classes represented \\
-    Classes with 0 test    & 9   & excluded from macro-F1 \\
-    Classes with 1 test    & 6   & near-zero contribution \\
+    Classes with 0 test    & 11  & excluded from macro-F1 \\
+    Classes with 1 test    & 8   & near-zero contribution \\
     \midrule
     Avg.\ vertices / mesh  & $\approx$10\,676 & surface triangulation \\
     Scalar fields          & 2   & Potential, NormalPotential \\
@@ -93,5 +93,8 @@ configurations:
 \end{center}
 
 These pairs share similar overall electrostatic profiles but belong to
-different SCOP families. The classification errors on these pairs are
-effectively irreducible with the current feature set.
+different SCOP families, and resist separation by the single-scale surface
+descriptors used here. As Section~\ref{sec:discussion:riconv2} shows, however,
+these errors are architecture-limited rather than data-intrinsic: RIConv2's
+multi-scale rotation-invariant grouping separates the same pairs from geometry
+alone (class\,61 F1\,=\,0.887).
