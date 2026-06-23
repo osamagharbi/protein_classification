@@ -243,6 +243,9 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
 
     tb_writer = _make_tb_writer(tb_log_dir) if tb_log_dir else None
 
+    patience     = getattr(args, "patience", 30)
+    no_improve   = 0
+
     t0 = time.time()
     def _snap(): return {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
@@ -264,7 +267,8 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
                 best_states[mkey] = snap_cache
 
         sel     = va[args.select_metric]
-        is_best = sel > best_vals.get(args.select_metric, -1.0)   # already updated above
+        is_best = best_eps.get(args.select_metric) == ep           # already updated above
+        no_improve = 0 if is_best else no_improve + 1
 
         if _csv_writer is not None:
             def _fmt(d, key): return f"{d.get(key, float('nan')):.4f}"
@@ -327,6 +331,10 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
 
         if on_epoch is not None:
             on_epoch(ep, sel)                                # may raise optuna.TrialPruned
+
+        if no_improve >= patience:
+            print(f"early stop at ep {ep}  (no improvement for {patience} epochs)", flush=True)
+            break
 
     if _csv_fh is not None:
         _csv_fh.close()
@@ -640,7 +648,9 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     # training budget (shared)
     ap.add_argument("--search-epochs", type=int, default=40,
-                    help="epochs per training run (search mode also prunes earlier)")
+                    help="max epochs per training run")
+    ap.add_argument("--patience", type=int, default=30,
+                    help="early stopping: epochs without improvement on --select-metric")
     ap.add_argument("--warmup-epochs", type=int, default=5)
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--num-workers", type=int, default=0,

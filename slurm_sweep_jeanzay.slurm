@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=RIHIER_SWEEP
-#SBATCH --time=03:00:00
+#SBATCH --time=20:00:00
 #SBATCH --array=0-499
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=10
@@ -67,7 +67,8 @@ srun python -u optuna_search_ri_hiernet.py \
   --train-labels-csv "$DATA/train_split.csv" \
   --val-labels-csv   "$DATA/val_split.csv" \
   --test-labels-csv  "$DATA/test_labels.csv" \
-  --search-epochs 50 \
+  --search-epochs 300 \
+  --patience      30 \
   --warmup-epochs 5 \
   --batch-size    64 \
   --num-workers   0 \
