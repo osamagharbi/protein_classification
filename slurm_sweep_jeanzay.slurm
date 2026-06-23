@@ -34,6 +34,11 @@ SEED_OFFSET="${2:-0}"
 WANDB_PROJECT="ri-hiernet-sweep"
 WANDB_ARGS=""
 if [ -n "$WANDB_PROJECT" ]; then
+  # Jean-Zay compute nodes have no internet — run offline, sync later from login node:
+  #   wandb sync $SWEEP_ROOT/wandb/run-*
+  export WANDB_MODE=offline
+  export WANDB_DIR="$SWEEP_ROOT/wandb"
+  mkdir -p "$WANDB_DIR"
   WANDB_ARGS="--wandb-project $WANDB_PROJECT --wandb-group $(basename $SWEEP_ROOT)"
 fi
 

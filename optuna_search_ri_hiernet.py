@@ -175,8 +175,13 @@ def _make_tb_writer(log_dir):
 def _make_wb_run(project, entity, group, run_name, config):
     try:
         import wandb
+        # Keep init_timeout short so a missing internet connection (HPC compute
+        # nodes) fails fast instead of blocking the training job for 90 seconds.
+        # WANDB_MODE=offline (set by the SLURM script) avoids the network call
+        # entirely; this is a safety net for any other environment.
+        settings = wandb.Settings(init_timeout=15)
         return wandb.init(project=project, entity=entity or None, group=group or None,
-                          name=run_name, config=config, reinit=True)
+                          name=run_name, config=config, reinit=True, settings=settings)
     except Exception as e:
         print(f"[warn] W&B unavailable: {e}"); return None
 
