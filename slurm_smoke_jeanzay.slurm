@@ -53,27 +53,35 @@ srun python -u smoke_test.py \
   --batch-size 16 \
   --heavy
 
-# ---------- (B) one real Optuna trial via the journal ----------
-echo "===== STAGE B: one Optuna trial through journal storage ====="
+# ---------- (B) the exact sweep path: gen -> train(1 task) -> agg ----------
+echo "===== STAGE B: sweep pipeline (gen -> train -> agg) ====="
 SMOKE_ROOT="$PROJECT/runs/smoke_${SLURM_JOB_ID}"
-mkdir -p "$SMOKE_ROOT"
+mkdir -p "$SMOKE_ROOT/results"
+
+echo "--- gen 2 configs ---"
 srun python -u optuna_search_ri_hiernet.py \
+  --mode gen --n-configs 2 --n-seeds 5 \
+  --configs-file "$SMOKE_ROOT/configs.json"
+
+echo "--- train config 0 / seed 0 (2 epochs) ---"
+srun python -u optuna_search_ri_hiernet.py \
+  --mode train \
+  --configs-file "$SMOKE_ROOT/configs.json" --config-id 0 --seed-id 0 \
+  --result-dir   "$SMOKE_ROOT/results" \
   --graph-dir        "$DATA" \
   --train-labels-csv "$DATA/train_split.csv" \
   --val-labels-csv   "$DATA/val_split.csv" \
   --test-labels-csv  "$DATA/test_labels.csv" \
-  --study-name       smoke \
-  --journal-file     "$SMOKE_ROOT/optuna_journal.log" \
-  --output-dir       "$SMOKE_ROOT" \
-  --worker-id        0 \
-  --n-trials         1 \
-  --search-epochs    2 \
-  --warmup-epochs    1 \
-  --batch-size       64 \
-  --num-workers      0 \
-  --select-metric    accuracy
+  --search-epochs 2 --warmup-epochs 1 --batch-size 64 --eval-test
+
+echo "--- aggregate ---"
+srun python -u optuna_search_ri_hiernet.py \
+  --mode agg --result-dir "$SMOKE_ROOT/results" \
+  --graph-dir "$DATA" \
+  --train-labels-csv "$DATA/train_split.csv" \
+  --test-labels-csv  "$DATA/test_labels.csv"
 
 echo "===== SMOKE COMPLETE ====="
 echo "If STAGE A printed [SMOKE PASSED] and STAGE B wrote:"
-echo "  $SMOKE_ROOT/smoke/best_config.json"
-echo "then submit:  sbatch slurm_optuna_jeanzay.slurm"
+echo "  $SMOKE_ROOT/results/cfg000_seed0.json  +  results/summary.json"
+echo "then launch the full sweep:  ./submit_sweep_jeanzay.sh 100 5"
