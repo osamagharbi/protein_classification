@@ -36,7 +36,7 @@ Searched parameters
   label_smoothing   {0.0, 0.1}
 """
 from __future__ import annotations
-import argparse, json, math, time, sys, os
+import argparse, csv, json, math, time, sys, os
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
@@ -154,10 +154,11 @@ def build_model(params: dict, num_classes: int) -> RIHierNet:
 
 
 def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
-                test_ds=None, on_epoch=None, tag=""):
+                test_ds=None, on_epoch=None, tag="", history_file=None):
     """Train one config for args.search_epochs and return its metrics dict.
     on_epoch(ep, val_sel) is called each epoch (search mode uses it to prune).
-    If test_ds is given, evaluate the best-val checkpoint on test once."""
+    If test_ds is given, evaluate the best-val checkpoint on test once.
+    If history_file is given, write a CSV with per-epoch metrics."""
     torch.manual_seed(train_seed); np.random.seed(train_seed)
     train_collate = make_collate(0.0, params["aug_dropout"], params["aug_scale"], 0.0, training=True)
     eval_collate = make_collate(training=False)
@@ -179,18 +180,47 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
         return 0.5 * (1 + math.cos(math.pi * prog))
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
+    _csv_fh = _csv_writer = None
+    if history_file is not None:
+        Path(history_file).parent.mkdir(parents=True, exist_ok=True)
+        _csv_fh = open(history_file, "w", newline="", buffering=1)
+        _csv_writer = csv.writer(_csv_fh)
+        _csv_writer.writerow([
+            "epoch", "lr",
+            "train_loss", "train_acc", "train_mf1",
+            "val_loss",   "val_acc",   "val_mf1",   "val_balacc", "val_wf1",
+            "is_best",
+        ])
+
     t0, best, best_ep, best_state = time.time(), -1.0, -1, None
     for ep in range(args.search_epochs):
-        run_epoch(model, train_loader, crit, device, opt, use_chem=True, desc="")
+        tr = run_epoch(model, train_loader, crit, device, opt, use_chem=True, desc="")
         va = run_epoch(model, val_loader, crit, device, None, use_chem=True, desc="")
         sched.step()
+        lr_now = opt.param_groups[0]["lr"]
         sel = va[args.select_metric]
-        if sel > best:
+        is_best = sel > best
+        if is_best:
             best, best_ep = sel, ep
             if test_ds is not None:
                 best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+        if _csv_writer is not None:
+            _csv_writer.writerow([
+                ep, f"{lr_now:.6e}",
+                f"{tr['loss']:.4f}", f"{tr['accuracy']:.4f}", f"{tr['f1_macro']:.4f}",
+                f"{va['loss']:.4f}", f"{va['accuracy']:.4f}", f"{va['f1_macro']:.4f}",
+                f"{va['balanced_accuracy']:.4f}", f"{va['f1_weighted']:.4f}",
+                int(is_best),
+            ])
+        print(f"ep {ep:3d}  lr={lr_now:.2e}  "
+              f"tr_loss={tr['loss']:.4f}  tr_acc={tr['accuracy']:.4f}  "
+              f"val_acc={va['accuracy']:.4f}  val_mf1={va['f1_macro']:.4f}"
+              + ("  *best*" if is_best else ""), flush=True)
         if on_epoch is not None:
             on_epoch(ep, sel)                                # may raise optuna.TrialPruned
+
+    if _csv_fh is not None:
+        _csv_fh.close()
 
     out = {"val_best": best, "val_best_epoch": best_ep,
            "n_params": int(n_params), "seconds": round(time.time() - t0, 1)}
@@ -264,17 +294,18 @@ def cmd_train(args, device):
     tr_ds, va_ds, num_classes = build_datasets(args)
     test_ds = build_test_dataset(args) if args.eval_test else None
 
+    rdir = Path(args.result_dir); rdir.mkdir(parents=True, exist_ok=True)
+    hfile = rdir / f"cfg{args.config_id:03d}_seed{args.seed_id}_history.csv"
     result = {"config_id": args.config_id, "seed": args.seed_id, "params": params}
     try:
         res = train_model(params, args.seed_id, tr_ds, va_ds, num_classes, device, args,
-                          test_ds=test_ds)
+                          test_ds=test_ds, history_file=hfile)
         result.update(res); result["status"] = "ok"
     except RuntimeError as e:
         torch.cuda.empty_cache()
         result["status"] = "oom" if "out of memory" in str(e).lower() else "error"
         result["error"] = str(e)[:300]
 
-    rdir = Path(args.result_dir); rdir.mkdir(parents=True, exist_ok=True)
     rfile = rdir / f"cfg{args.config_id:03d}_seed{args.seed_id}.json"
     rfile.write_text(json.dumps(result, indent=2, default=float))
     print(f"wrote {rfile}  status={result['status']} "
