@@ -247,6 +247,10 @@ def main():
                     help="explicit train labels CSV (overrides --data-dir)")
     ap.add_argument("--test-labels-csv", default=None,
                     help="explicit test labels CSV (overrides --data-dir)")
+    ap.add_argument("--val-labels-csv", default=None,
+                    help="predefined validation split CSV (e.g. <root>/val_split.csv). "
+                         "If set, train=proteins in train-labels-csv NOT in this file, "
+                         "val=proteins in this file — overrides --random-val/--grouped-val.")
     ap.add_argument("--run-name", default=None)
     ap.add_argument("--output-dir", default="/home/ogharbi/projects/protein_classification/runs")
     # curriculum
@@ -327,13 +331,25 @@ def main():
     print(f"labels: train {len(train_labels)} ({len(set(train_labels.values()))} cls) from {args.train_labels_csv}")
     print(f"        test  {len(test_labels)} ({len(set(test_labels.values()))} cls) from {args.test_labels_csv}")
 
-    full_train = PointCloudDataset(args.graph_dir, "train", train_labels, npoint=args.npoint)
     test_ds = PointCloudDataset(args.graph_dir, "test", test_labels, npoint=args.npoint)
-    if args.grouped_val:
-        tr_idx, va_idx = grouped_train_val_split(full_train, val_split=args.val_split, seed=args.seed)
+
+    if args.val_labels_csv:
+        # ── predefined validation split (e.g. _ri val_split.csv) ──
+        val_labels = load_labels_csv(args.val_labels_csv)
+        val_ids = set(val_labels.keys())
+        combined = {**train_labels, **val_labels}          # ensure all val proteins are loaded
+        full_train = PointCloudDataset(args.graph_dir, "train", combined, npoint=args.npoint)
+        tr_idx = [i for i, (gid, _, _) in enumerate(full_train.items) if gid not in val_ids]
+        va_idx = [i for i, (gid, _, _) in enumerate(full_train.items) if gid in val_ids]
+        print(f"  predefined split from {args.val_labels_csv}: "
+              f"{len(va_idx)}/{len(val_ids)} val proteins matched")
     else:
-        tr_idx, va_idx = create_robust_train_val_split(full_train, full_train.ordered_labels(),
-                                                       val_split=args.val_split, seed=args.seed)
+        full_train = PointCloudDataset(args.graph_dir, "train", train_labels, npoint=args.npoint)
+        if args.grouped_val:
+            tr_idx, va_idx = grouped_train_val_split(full_train, val_split=args.val_split, seed=args.seed)
+        else:
+            tr_idx, va_idx = create_robust_train_val_split(full_train, full_train.ordered_labels(),
+                                                           val_split=args.val_split, seed=args.seed)
     train_ds, val_ds = Subset(full_train, tr_idx), Subset(full_train, va_idx)
     print(f"train={len(train_ds)} val={len(val_ds)} test={len(test_ds)} classes={num_classes}")
 
