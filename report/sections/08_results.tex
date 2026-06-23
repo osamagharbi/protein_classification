@@ -11,9 +11,11 @@ et al.~\cite{riconv2}.
 All HierGIN metrics use the proper 88-class evaluation protocol
 (Section~\ref{sec:eval_protocol}).
 RIConv2 metrics are recomputed from their published prediction CSVs under
-the same 88-class protocol (their test set contains 90 classes including
-two --- classes 97 and 98 --- absent from ours; we restrict to the 88 shared
-classes for a fair comparison).
+the same 88-class protocol.
+Both methods are evaluated on the 88 classes that have test proteins in the
+official SHREC\,25 test set; 11 of the 99 families have no test proteins
+(including classes 97 and 98) and are therefore excluded from all
+macro-averaged metrics.
 
 \begin{table}[ht]
   \centering
@@ -44,14 +46,22 @@ classes for a fair comparison).
     \midrule
     \multicolumn{6}{l}{\textit{HierGIN --- enriched features (14D = 8D + 6 geometric)}} \\
     \quad HierGIN 14D (z-scored)      & per-protein z-score  & 0.838 & 0.757 & 0.752 & 0.837 \\
-    \quad HierGIN 14D (global norm)   & global norm          & 0.865 & 0.812 & 0.808 & 0.862 \\
+    \quad HierGIN 14D (global norm)   & global norm          & 0.865 & 0.812 & \textbf{0.808} & 0.862 \\
     \midrule
     \multicolumn{6}{l}{\textit{HierGIN --- rotation-invariant backbone (RI-GIN)}} \\
     \quad HierGIN 8D + RI-GIN         & all 8 features       & 0.865 & 0.813 & 0.800 & 0.863 \\
-    \quad HierGIN 14D + RI-GIN         & global norm      & 0.860 & 0.807 & 0.793 & 0.852 \\
+    \quad HierGIN 14D + RI-GIN        & global norm          & 0.860 & 0.807 & 0.793 & 0.852 \\
     \midrule
     \multicolumn{6}{l}{\textit{HierGIN --- LRF edge features (negative result)}} \\
     \quad HierGIN 8D + LRF-GIN        & all 8 features       & 0.838 & 0.776 & 0.766 & 0.817 \\
+    \midrule
+    \multicolumn{6}{l}{\textit{RI-HierNet --- multi-scale RI set-abstraction + patch GIN (Section~\ref{sec:arch:rihiernet})$^\dagger$}} \\
+    \quad RI-HierNet (4 SA + 2 GIN)   & xyz + normals + Pot. & 0.894 & 0.818 & 0.821 & \textbf{0.888} \\
+    \midrule
+    \multicolumn{6}{l}{\textit{GeoChem-MSRINet prototype --- diagnostic runs (precursor to RI-HierNet)}} \\
+    \quad GeoChem first curriculum    & geom warmup          & 0.222 & 0.011 & 0.004 & 0.081 \\
+    \quad GeoChem corrected balanced  & chem + balanced samp. & 0.756 & 0.758 & 0.734 & 0.755 \\
+    \quad GeoChem natural prior       & chem + natural samp.  & 0.848 & 0.747 & 0.752 & 0.845 \\
     \midrule
     \multicolumn{6}{l}{\textit{HierGIN --- three-level pooling 1000$\to$128$\to$32 (negative result)}} \\
     \quad HierGIN 14D + 3-level       & global norm          & 0.238 & 0.023 & 0.016 & 0.224 \\
@@ -61,6 +71,13 @@ classes for a fair comparison).
     \quad + inject 8-feat             & all signal scalars   & ---   & ---   & 0.778 & ---   \\
     \bottomrule
   \end{tabular}
+  \smallskip\\
+  {\footnotesize $^\dagger$ RI-HierNet is evaluated on the new-version SHREC\,25 dataset
+  (90-class basis: 9 zero-test classes excluded); all other methods use the
+  88-class protocol.
+  Accuracy and weighted-F1 are directly comparable (support-weighted);
+  macro-F1 and balanced accuracy are slightly affected by the two extra
+  evaluated classes (97 and 98).}
 \end{table}
 
 \paragraph{Key observations.}
@@ -76,14 +93,28 @@ classes for a fair comparison).
         matching or exceeding all HierGIN configurations including those with
         electrostatic features (Section~\ref{sec:discussion:riconv2}).
 
-  \item \textbf{HierGIN 14D (global norm) is our best model, 0.808 macro-F1.}
+  \item \textbf{RI-HierNet achieves the best accuracy and weighted-F1.}
+        The multi-scale rotation-invariant set-abstraction encoder with patch-level
+        GIN reaches accuracy\,=\,0.894 and weighted-F1\,=\,0.888, a $+$2.7\,pp
+        accuracy gain over the best HierGIN-14D configuration.
+        This validates the architecture direction: replacing HierGIN's single-scale
+        kNN-6 node stage with hierarchical FPS + ball-query encoding yields a
+        measurable improvement.
+        The remaining gap to RIConv2 RUN2 ($-$3.5\,pp accuracy) is plausibly
+        explained by RIConv2's wider encoder (2048-D vs.\ 512-D), deeper SA stack
+        (5 layers vs.\ 4), and three data augmentations (point dropout, random scale,
+        random shift) which our run did not apply.
+
+  \item \textbf{HierGIN 14D (global norm) is our best model on macro-F1, 0.808.}
         Adding 6 globally-normalised geometric features to the 8D base gives
         $+$1.0\,pp macro-F1 and $+$1.2\,pp balanced accuracy over the 8D
         model.
         Normalisation scheme is critical: per-protein z-scoring degrades
         macro-F1 to 0.752 ($-$5.6\,pp).
-        However, HierGIN-14D trails RIConv2 RUN1 (geometry-only) by 3\,pp ---
-        indicating that the architecture gap is larger than the feature gap.
+        RI-HierNet, trained with unweighted cross-entropy, optimises accuracy and
+        weighted-F1; it reaches macro-F1\,=\,0.821 on the 90-class basis, broadly
+        consistent with HierGIN-14D (0.808 on 88-class), but not tuned for
+        rare-class recall.
 
   \item \textbf{Within HierGIN, Potential is the dominant per-feature signal.}
         Removing Potential costs $-$11.8\,pp macro-F1 (largest single-feature
@@ -112,7 +143,143 @@ classes for a fair comparison).
         regression, ruling out signal loss through pooling as an explanation
         for HierGIN's performance gap.
 
+  \item \textbf{GeoChem-MSRINet improves sharply under natural-prior training, but remains macro-F1 limited.}
+        After the main report experiments, we implemented a pure-PyTorch
+        multi-scale rotation-invariant set-abstraction prototype,
+        GeoChem-MSRINet, to test the proposed RIConv2-style direction inside
+        this repository.
+        The initial curriculum run collapsed to the majority class
+        (class\,8), giving macro-F1\,=\,0.004.
+        A label audit found no ID or class-index mismatch; the result exactly
+        matched an all-class-8 predictor.
+        With chemistry enabled from epoch 1, a balanced sampler, lower learning
+        rate, MLP-only logits, and reduced patch depth, the corrected diagnostic
+        run reached validation macro-F1\,=\,0.765 and test macro-F1\,=\,0.734.
+        A subsequent natural-prior run removed both the balanced sampler and
+        class weights, following the RIConv2 training recipe more closely.
+        This raised test accuracy to 0.848 and weighted-F1 to 0.845, while
+        test macro-F1 reached 0.752.
+        Thus the implementation is now competitive with HierGIN on
+        support-weighted metrics, but remains below HierGIN-8D (0.798),
+        HierGIN-14D (0.808), and RIConv2 RUN2 (0.854) on macro-F1.
+
 \end{enumerate}
+
+\subsection{RI-HierNet and GeoChem-MSRINet Prototype}
+\label{sec:results:geochem}
+
+To test the architecture direction suggested by RIConv2, we implemented two
+successive versions: an initial diagnostic prototype (GeoChem-MSRINet) and a
+cleaned final model (RI-HierNet, described in Section~\ref{sec:arch:rihiernet}).
+
+\paragraph{RI-HierNet final result.}
+The final model (\texttt{ri\_hiernet\_acc\_v4}) trains for 120 epochs with unweighted
+cross-entropy, AdamW, and cosine annealing (no data augmentation).
+Evaluated at the best-validation-accuracy checkpoint:
+\begin{center}
+\begin{tabular}{lrrrr}
+  \toprule
+  \textbf{Split} & \textbf{Acc} & \textbf{Bal.Acc} & \textbf{Macro-F1} & \textbf{Wtd-F1} \\
+  \midrule
+  test (90-class) & 0.894 & 0.818 & 0.821 & 0.888 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+This surpasses HierGIN-14D on accuracy ($+$2.7\,pp) and weighted-F1 ($+$2.4\,pp),
+confirming the benefit of the multi-scale RI encoder.
+
+\paragraph{GeoChem-MSRINet diagnostic prototype.}
+The GeoChem-MSRINet prototype was an earlier, less stable implementation of the
+same idea.
+The model replaces the single-scale kNN-6 node stage with nested FPS
+downsampling, metric ball-query neighbourhoods, point-pair invariant features,
+and a compact patch-token graph encoder.
+Because the local environment did not provide DGL, PyG, torch-cluster,
+torch-scatter, or PyTorch3D, the prototype uses pure PyTorch operations
+including dense \texttt{torch.cdist}.
+This made the experiment runnable and inspectable, but not equivalent to an
+optimised PointNet++/RIConv2 CUDA implementation.
+
+\paragraph{Correctness checks.}
+The synthetic rotation-invariance smoke test passed with a maximum logit
+difference of approximately $9\times10^{-7}$ after random global rotation.
+Small real-data smoke tests also confirmed that CSV labels resolve to the
+expected tensor files.
+
+\paragraph{Failed curriculum run.}
+The first full run used the intended geometry-first curriculum:
+geometry-only until epoch 40, cosine/SupCon losses enabled, label smoothing,
+and rotation/noise augmentation.
+It early-stopped at epoch 31 before chemistry was enabled.
+The best validation macro-F1 was only 0.004 and the test macro-F1 was 0.004.
+Inspection showed that the model predicted class\,8 for every sample in train,
+validation, and test.
+Since class\,8 accounts for 22.2\% of all three splits, the 0.222 accuracy and
+near-zero macro-F1 exactly match a majority-class predictor.
+The label audit checked train/val/test ID overlap, CSV-to-file matching,
+class-index ranges, and tensor \texttt{meta["source\_file"]} consistency; no
+label-loading error was found.
+
+\paragraph{Overfit probes.}
+A fixed eight-sample batch spanning eight classes was memorised to 100\%
+accuracy by step 50 when chemistry was enabled, cosine/SupCon losses were
+disabled, and the MLP classifier was used alone.
+A balanced 32-sample probe reached approximately 0.875 accuracy and 0.833
+macro-F1.
+These probes showed that the forward/backward path and label mapping are
+functional, but that the model is sensitive to optimisation and sampling.
+
+\paragraph{Corrected diagnostic run.}
+The best stable full run used chemistry from epoch 1, inverse-frequency
+balanced sampling, learning rate $3\times10^{-4}$, no label smoothing,
+no cosine/SupCon loss, MLP-only logits, one patch-GIN layer, one patch
+transformer layer, and no rotation/noise augmentation.
+It selected epoch 56 by validation macro-F1:
+
+\begin{center}
+\begin{tabular}{lrrrrr}
+  \toprule
+  \textbf{Split} & \textbf{Acc} & \textbf{Bal.Acc} & \textbf{Macro-F1} & \textbf{Wtd-F1} & \textbf{Loss} \\
+  \midrule
+  validation & 0.758 & 0.798 & 0.765 & 0.758 & 0.965 \\
+  test       & 0.756 & 0.758 & 0.734 & 0.755 & 0.901 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+The corrected run is therefore a useful diagnostic success but not a new
+state-of-the-art result.
+It sits above weak flat baselines but below the mature HierGIN family and far
+below RIConv2.
+Most importantly, it does not yet reproduce RIConv2's geometry-only signal:
+the only successful full run required chemistry from the start.
+
+\paragraph{Natural-prior training run.}
+Inspection of the RIConv2 training scripts showed that the high-accuracy
+baseline used natural shuffled sampling and unweighted cross entropy, not a
+balanced sampler or class-weighted loss.
+We therefore launched a second chemistry-first GeoChem run with the same stable
+architecture settings, but removed both the balanced sampler and class weights.
+The run selected epoch 159 by validation macro-F1:
+
+\begin{center}
+\begin{tabular}{lrrrrr}
+  \toprule
+  \textbf{Split} & \textbf{Acc} & \textbf{Bal.Acc} & \textbf{Macro-F1} & \textbf{Wtd-F1} & \textbf{Loss} \\
+  \midrule
+  validation & 0.852 & 0.788 & 0.788 & 0.849 & 1.174 \\
+  test       & 0.848 & 0.747 & 0.752 & 0.845 & 1.164 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+This run is a substantial improvement over the balanced diagnostic run in
+accuracy and weighted-F1, and a modest improvement in test macro-F1.
+However, the lower balanced accuracy shows that rare classes remain less
+robust than in the mature HierGIN and RIConv2 systems.
+The training curve also exhibited clear overfitting: validation loss was lowest
+near epoch 42, while macro-F1 peaked much later after the model had essentially
+memorised the training split.
 
 \subsection{Backbone Comparison}
 

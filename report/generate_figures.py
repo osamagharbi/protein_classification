@@ -1086,6 +1086,55 @@ def fig_curvature_study():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Figure 18: RI-HierNet training dynamics
+# ═══════════════════════════════════════════════════════════════════════════════
+def fig_ri_hiernet_curves():
+    f = RUNS / 'ri_hiernet_acc_v4' / 'final_results.json'
+    if not f.exists():
+        print('  [18] ri_hiernet_curves.pdf  SKIPPED (no data)')
+        return
+    d = json.load(open(f))
+    hist = d['history']
+    epochs   = [h['epoch'] for h in hist]
+    val_acc  = [h['val']['accuracy']    for h in hist]
+    val_wf1  = [h['val']['f1_weighted'] for h in hist]
+    test_acc = [h['test']['accuracy']    if h['test'] else None for h in hist]
+    test_wf1 = [h['test']['f1_weighted'] if h['test'] else None for h in hist]
+
+    best_ep = d.get('best_val_epoch', None)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    for ax, (val_m, test_m, ylabel, title) in zip(axes, [
+        (val_acc,  test_acc, 'Accuracy',    'Accuracy over training'),
+        (val_wf1,  test_wf1, 'Weighted-F1', 'Weighted-F1 over training'),
+    ]):
+        ax.plot(epochs, val_m,  color=C[0], lw=1.8, label='Val')
+        te_epochs = [e for e, v in zip(epochs, test_m) if v is not None]
+        te_vals   = [v for v in test_m if v is not None]
+        ax.plot(te_epochs, te_vals, color=C[1], lw=1.8, ls='--', label='Test')
+        ax.axhline(0.867, color='grey', lw=1, ls=':', alpha=0.7, label='HierGIN-14D best')
+        ax.axhline(0.929, color='black', lw=1, ls=':', alpha=0.5, label='RIConv2 RUN2')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.legend(fontsize=7)
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(1, max(epochs))
+        ax.set_ylim(0.5, 1.0)
+
+    # mark best-checkpoint epoch
+    if best_ep is not None:
+        for ax in axes:
+            ax.axvline(best_ep, color=C[2], lw=1, ls=':', alpha=0.8)
+
+    plt.suptitle('RI-HierNet training dynamics (ri_hiernet_acc_v4, 120 epochs)', fontsize=11)
+    plt.tight_layout()
+    fig.savefig(OUT / 'ri_hiernet_curves.pdf')
+    plt.close(fig)
+    print('  [18] ri_hiernet_curves.pdf')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Main
 # ═══════════════════════════════════════════════════════════════════════════════
 if __name__ == '__main__':
@@ -1107,6 +1156,7 @@ if __name__ == '__main__':
     fig_separability_resolution()
     fig_geom_study()
     fig_curvature_study()
+    fig_ri_hiernet_curves()
     print('\nAll figures done.')
     import os
     pdfs = sorted(OUT.glob('*.pdf'))

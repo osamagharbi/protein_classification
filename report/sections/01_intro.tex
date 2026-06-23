@@ -18,16 +18,18 @@ Three structural challenges make SHREC\,25 particularly demanding:
   \item \textbf{Class imbalance.}
         The most frequent class (class\,8) has 2\,054 training examples while
         the rarest class has only 2 --- a 1\,027$\times$ ratio.
-        Nine classes have zero test proteins; evaluating macro-averaged F1 over
-        88 testable classes directly penalises poor recall on rare classes.
+        Eleven classes have zero test proteins; evaluating macro-averaged F1
+        over the 88 testable classes directly penalises poor recall on rare
+        classes.
 
   \item \textbf{Near-inseparable class pairs.}
         Several protein families share highly similar surface geometry and
         electrostatics.
-        The pair (class\,61, class\,90), for instance, cannot be reliably
-        separated even with full-resolution VTK meshes and protein-level
-        support-vector-machine classifiers (balanced accuracy $\approx 0.56$,
-        barely above chance).
+        The pair (class\,61, class\,90), for instance, is not separated by
+        protein-level support-vector-machine classifiers on the provided surface
+        features, even at full VTK resolution (balanced accuracy $\approx 0.56$).
+        Section~\ref{sec:discussion:riconv2} shows this reflects the limits of
+        single-scale descriptors rather than the data itself.
 
   \item \textbf{Surface-only feature budget.}
         The dataset provides only vertex positions, surface normals, and two
@@ -57,6 +59,12 @@ contributions:
         patch pooling layer, and a patch-level GIN before global readout and
         classification (Section~\ref{sec:arch}).
 
+  \item A rotation-invariant hierarchical architecture (\textit{RI-HierNet})
+        that replaces the node-level GIN with four nested FPS + ball-query
+        set-abstraction layers using point-pair invariant features,
+        followed by a patch-level GIN over the 64 SA centroids
+        (Section~\ref{sec:arch:rihiernet}).
+
   \item Systematic ablation of eight node-backbone types, five feature
         configurations, patch counts, hidden dimensions, and training
         regularisation choices (Section~\ref{sec:ablation}).
@@ -67,7 +75,13 @@ contributions:
         structure (Section~\ref{sec:results}).
 \end{itemize}
 
-Our best model, \textbf{HierGIN-8D}, achieves a macro-F1 of \textbf{0.7983}
-on 88 evaluated test classes, surpassing flat-GNN baselines by $+$15.8\,pp,
-while the fundamental confusion between class pairs (61,\,90) and (70,\,56)
-persists across all models and feature configurations tested.
+Our final RI-HierNet model achieves \textbf{accuracy\,=\,0.894} and
+\textbf{weighted-F1\,=\,0.888}, a $+$2.7\,pp accuracy gain over the best
+HierGIN-14D configuration (0.867) and a $+$4.1\,pp gain over the flat-GNN
+baseline on accuracy.
+HierGIN-14D remains the best model on macro-F1 (0.808 on the 88-class protocol),
+as RI-HierNet is optimised for accuracy and weighted-F1 using unweighted
+cross-entropy.
+The confusion between class pairs (61,\,90) and (70,\,56) persists across all
+configurations, but the comparison with RIConv2
+(Section~\ref{sec:results}) shows it is architecture-limited, not data-intrinsic.

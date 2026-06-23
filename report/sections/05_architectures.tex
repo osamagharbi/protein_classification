@@ -185,6 +185,84 @@ A memory-efficient alternative would compute RI messages at a lower
 dimension (e.g.\ $d = 64$) and add them to the standard GIN update,
 rather than concatenating into the full MLP.
 
+\subsection{RI-HierNet: Multi-Scale Rotation-Invariant Hierarchical Network}
+\label{sec:arch:rihiernet}
+
+RI-HierNet (\texttt{ri\_hiernet.py}) replaces HierGIN's kNN-6 node stage with a
+four-level FPS + ball-query set-abstraction encoder similar to RIConv2, then
+adds a patch-level GIN over the resulting 64 centroids.
+
+\subsubsection{Point-Pair Feature (PPF) Encoder}
+
+At each set-abstraction (SA) level, farthest-point sampling (FPS) selects
+centroids; for each centroid, up to $k = 32$ neighbours within a fixed radius
+are grouped.
+For each (centroid $c$, neighbour $j$) pair, a 6-dimensional rotation-invariant
+descriptor is computed:
+\begin{equation}
+  \phi_{cj} = \Bigl[
+    \|\mathbf{d}\|,\;
+    \angle(\mathbf{n}_c, \hat{\mathbf{d}}),\;
+    \angle(\mathbf{n}_j, \hat{\mathbf{d}}),\;
+    \angle(\mathbf{n}_c, \mathbf{n}_j),\;
+    \|\mathbf{d}\| / r,\;
+    (\mathbf{n}_c \times \mathbf{n}_j) \cdot \hat{\mathbf{d}}
+  \Bigr],
+\end{equation}
+where $\mathbf{d} = \mathbf{p}_j - \mathbf{p}_c$ and $r$ is the SA radius.
+These six quantities are invariant to global SO(3) rotations and translations.
+Numerical verification confirms $\max|\Delta\text{logit}| < 4 \times 10^{-6}$
+under random rotation (float32).
+
+The descriptor is concatenated with the neighbour's carried feature vector and
+passed through a shared $1\times1$ MLP (Conv2d), followed by max-pooling over
+the $k$ neighbours to produce the centroid's new feature.
+The four SA layers progressively downsample from 1\,000 to 512, 256, 128, and
+finally 64 points, with channel widths [64, 128, 256, 512] and radii
+[0.10, 0.20, 0.40, 0.80].
+
+\subsubsection{Patch-Level GIN over SA Centroids}
+
+The 64 SA4 centroids (each carrying a 512-D feature) are connected into a
+kNN-8 graph and processed by $L_p = 2$ GIN layers (Equation~\ref{eq:gin})
+with hidden dimension 512.
+This is the key difference from RIConv2, which applies global max-pooling
+directly over the 64 centroids.
+
+\subsubsection{Readout}
+
+Two complementary readout vectors are computed over the 64 patch centroids
+and concatenated into a 1024-D graph embedding:
+\begin{itemize}
+  \item \textbf{Max readout}: element-wise maximum over the 64 feature vectors.
+  \item \textbf{Attention readout}: a two-layer MLP produces per-centroid scalar
+        weights; a softmax-weighted sum yields the attention aggregate.
+\end{itemize}
+A two-layer MLP (1024 $\to$ 512 $\to$ 99, GELU, dropout $p=0.3$) maps the
+concatenated embedding to class logits.
+The model has 2\,183\,142 trainable parameters.
+
+\subsubsection{Training Configuration}
+
+RI-HierNet is trained with unweighted cross-entropy (label smoothing 0.1),
+AdamW ($\text{lr} = 5\times10^{-4}$, weight decay $10^{-4}$), cosine annealing
+with 5-epoch warmup, batch size 64, and 120 epochs.
+Checkpointing is by validation accuracy (not macro-F1), consistent with the
+optimisation objective.
+Figure~\ref{fig:ri_hiernet_curves} shows the training dynamics.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{figures/ri_hiernet_curves.pdf}
+  \caption{RI-HierNet training dynamics over 120 epochs.
+           Val and test accuracy (left) and weighted-F1 (right).
+           Dashed reference lines mark HierGIN-14D (0.867 acc) and RIConv2 RUN2
+           (0.929 acc).
+           The model crosses the HierGIN-14D threshold around epoch 36 and
+           converges to acc\,=\,0.894 / wf1\,=\,0.888.}
+  \label{fig:ri_hiernet_curves}
+\end{figure}
+
 \subsection{VTK Mesh Visualisation}
 
 Figure~\ref{fig:vtk} shows five example protein surfaces per class for

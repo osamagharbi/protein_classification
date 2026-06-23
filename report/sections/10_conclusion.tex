@@ -64,12 +64,30 @@ Three-level pooling (1\,000\,$\to$\,128\,$\to$\,32) using two independently-buil
 FPS assignments collapses to near-random performance (macro-F1\,=\,0.016);
 nested assignment construction is required for multi-level pooling to be effective.
 
+\paragraph{RI-HierNet validates the architecture direction.}
+We implemented a multi-scale rotation-invariant hierarchical architecture
+(RI-HierNet) that replaces HierGIN's kNN-6 node stage with four nested FPS +
+ball-query set-abstraction layers using 6-D point-pair invariant features,
+followed by a kNN-8 patch GIN over the resulting 64 centroids.
+An earlier diagnostic prototype (GeoChem-MSRINet) produced unstable results
+owing to curriculum and label-loading issues, but once resolved, the final
+RI-HierNet run (\texttt{ri\_hiernet\_acc\_v4}) achieves
+\textbf{accuracy\,=\,0.894 and weighted-F1\,=\,0.888} on test,
+a $+$2.7\,pp accuracy improvement over HierGIN-14D (0.867).
+This confirms the architecture hypothesis: multi-scale RI encoding of local
+surface geometry yields a measurable gain over single-scale kNN graphs.
+The remaining gap to RIConv2 RUN2 ($-$3.5\,pp accuracy) is attributable to
+RI-HierNet's narrower encoder (512-D vs.\ RIConv2's 2048-D), shallower SA
+stack (4 layers vs.\ 5), and absence of data augmentation.
+
 \paragraph{Future work.}
-The highest-priority direction is replacing HierGIN's kNN-6 node stage with
-RIConv2-style multi-scale ball-query grouping while retaining the patch-level
-GNN for coarse spatial reasoning.
-The $+$1.6\,pp Potential gain in RIConv2 suggests that electrostatic features
-still contribute on a strong geometric backbone.
-Further gains beyond macro-F1\,$\approx$\,0.85 will likely require sequence
-features (e.g.\ ESM-2~\cite{esm2}) to resolve families whose surfaces are
-structurally and chemically similar.
+RI-HierNet's architecture is validated but not yet exhausted.
+Three targeted improvements could close the gap to RIConv2:
+(1)~matching RIConv2's SA encoder width (2048-D output) and depth (5 layers);
+(2)~applying the three augmentations used by RIConv2 (random point dropout,
+random scale, random shift) which are straightforward to add to the data
+pipeline;
+(3)~removing label smoothing, which is absent in RIConv2's training recipe.
+Longer term, gains beyond accuracy\,$\approx$\,0.93 will likely require
+sequence features (e.g.\ ESM-2~\cite{esm2}) to resolve families whose
+surfaces are structurally and chemically near-identical.
