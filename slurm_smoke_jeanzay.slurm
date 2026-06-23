@@ -8,8 +8,8 @@
 #SBATCH --constraint=v100-32g
 #SBATCH --qos=qos_gpu-t3
 #SBATCH --account=acu@v100
-#SBATCH --output=${WORK}/protein_classification/logs/log_%x_%j.out
-#SBATCH --error=${WORK}/protein_classification/logs/log_%x_%j.err
+#SBATCH --output=logs/log_%x_%j.out
+#SBATCH --error=logs/log_%x_%j.err
 #
 # PRE-REQUISITE (run once on login node before first sbatch):
 #   mkdir -p $WORK/protein_classification/logs

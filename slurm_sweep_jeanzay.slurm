@@ -9,8 +9,8 @@
 #SBATCH --constraint=v100-32g
 #SBATCH --qos=qos_gpu-t3
 #SBATCH --account=acu@v100
-#SBATCH --output=${WORK}/protein_classification/logs/log_%x_%A_%a.out
-#SBATCH --error=${WORK}/protein_classification/logs/log_%x_%A_%a.err
+#SBATCH --output=logs/log_%x_%A_%a.out
+#SBATCH --error=logs/log_%x_%A_%a.err
 #
 # Parallel seed-averaged sweep — ONE training per GPU.
 #   array task i  ->  config_id = i // N_SEEDS,  seed_id = i % N_SEEDS
