@@ -9,8 +9,11 @@
 #SBATCH --constraint=v100-32g
 #SBATCH --qos=qos_gpu-t3
 #SBATCH --account=acu@v100
-#SBATCH --output=/lustre/fswork/projects/rech/acu/uzh45fh/protein_classification/logs/log_%x_%A_%a.out
-#SBATCH --error=/lustre/fswork/projects/rech/acu/uzh45fh/protein_classification/logs/log_%x_%A_%a.err
+#SBATCH --output=${WORK}/protein_classification/logs/log_%x_%A_%a.out
+#SBATCH --error=${WORK}/protein_classification/logs/log_%x_%A_%a.err
+#
+# PRE-REQUISITE (run once on login node before first sbatch):
+#   mkdir -p $WORK/protein_classification/logs
 #
 # Distributed Optuna HPO for RI-HierNet on SHREC25.
 # One Slurm array task = one Optuna worker = one V100. All tasks in the array

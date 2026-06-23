@@ -8,8 +8,11 @@
 #SBATCH --constraint=v100-32g
 #SBATCH --qos=qos_gpu-t3
 #SBATCH --account=acu@v100
-#SBATCH --output=/lustre/fswork/projects/rech/acu/uzh45fh/protein_classification/logs/log_%x_%j.out
-#SBATCH --error=/lustre/fswork/projects/rech/acu/uzh45fh/protein_classification/logs/log_%x_%j.err
+#SBATCH --output=${WORK}/protein_classification/logs/log_%x_%j.out
+#SBATCH --error=${WORK}/protein_classification/logs/log_%x_%j.err
+#
+# PRE-REQUISITE (run once on login node before first sbatch):
+#   mkdir -p $WORK/protein_classification/logs
 #
 # Pre-flight smoke test — run this ONCE before submitting slurm_optuna_jeanzay.slurm.
 # Two stages on one V100:
@@ -36,8 +39,10 @@ export PYTHONUNBUFFERED=1
 # ---------- Paths ----------
 PROJECT="$WORK/protein_classification"
 DATA="$WORK/ssl_graphs_1k_geom_enriched_ri"
-cd "$PROJECT" || { echo "cd $PROJECT failed"; exit 1; }
+# logs/ must pre-exist for the #SBATCH --output path; create it early in case
+# this is the first job submitted after a fresh clone.
 mkdir -p "$PROJECT/logs"
+cd "$PROJECT" || { echo "cd $PROJECT failed"; exit 1; }
 
 echo "Node: $(hostname)   JOB_ID=${SLURM_JOB_ID}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-UNSET}"

@@ -17,6 +17,7 @@ PROJECT="$WORK/protein_classification"
 DATA="$WORK/ssl_graphs_1k_geom_enriched_ri"
 ACCOUNT="acu@v100"
 SWEEP_ROOT="$PROJECT/runs/sweep_$(date +%Y%m%d_%H%M%S)"
+# logs/ must exist before sbatch so SLURM can open the output files immediately
 mkdir -p "$SWEEP_ROOT/results" "$PROJECT/logs"
 cd "$PROJECT"
 
