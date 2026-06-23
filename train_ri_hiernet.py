@@ -235,9 +235,18 @@ def run_epoch(model, loader, criterion, device, optimizer=None, use_chem=True,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--graph-dir", default="/home/ogharbi/datasets/SHREC25/ssl_graphs_1k_geom_enriched")
-    ap.add_argument("--train-labels-csv", default="/home/ogharbi/datasets/SHREC25/pc/train_labels.csv")
-    ap.add_argument("--test-labels-csv", default="/home/ogharbi/datasets/SHREC25/pc/test_labels.csv")
+    ap.add_argument("--data-dir", default="/home/ogharbi/datasets/SHREC25",
+                    help="SHREC25 dataset root. Derives --graph-dir (<root>/ssl_graphs_1k_geom_enriched), "
+                         "--train-labels-csv (<root>/pc/train_labels.csv), and "
+                         "--test-labels-csv (<root>/pc/test_labels.csv) unless those are passed explicitly.")
+    ap.add_argument("--graph-subdir", default="ssl_graphs_1k_geom_enriched",
+                    help="graph folder name under --data-dir (used only when --graph-dir is not given)")
+    ap.add_argument("--graph-dir", default=None,
+                    help="explicit graph dir (overrides --data-dir/--graph-subdir)")
+    ap.add_argument("--train-labels-csv", default=None,
+                    help="explicit train labels CSV (overrides --data-dir)")
+    ap.add_argument("--test-labels-csv", default=None,
+                    help="explicit test labels CSV (overrides --data-dir)")
     ap.add_argument("--run-name", default=None)
     ap.add_argument("--output-dir", default="/home/ogharbi/projects/protein_classification/runs")
     # curriculum
@@ -292,6 +301,17 @@ def main():
     ap.add_argument("--monitor-test", action="store_true", default=True,
                     help="log clean test metrics each epoch (diagnosis only)")
     args = ap.parse_args()
+
+    # Derive dataset paths from --data-dir unless overridden explicitly.
+    root = Path(args.data_dir)
+    if args.graph_dir is None:
+        args.graph_dir = str(root / args.graph_subdir)
+    if args.train_labels_csv is None:
+        args.train_labels_csv = str(root / "pc" / "train_labels.csv")
+    if args.test_labels_csv is None:
+        args.test_labels_csv = str(root / "pc" / "test_labels.csv")
+    print(f"data-dir={args.data_dir}\n  graph-dir={args.graph_dir}\n"
+          f"  train-csv={args.train_labels_csv}\n  test-csv={args.test_labels_csv}")
 
     torch.manual_seed(args.seed); np.random.seed(args.seed)
     device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() else "cpu")
