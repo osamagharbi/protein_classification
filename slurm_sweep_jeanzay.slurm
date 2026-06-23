@@ -30,7 +30,7 @@ SWEEP_ROOT="${1:?pass SWEEP_ROOT as arg1 (dir holding configs.json)}"
 # ---- optional loggers ----
 # TensorBoard: always on (writes to $SWEEP_ROOT/tb/<run>/)
 # W&B: set WANDB_PROJECT to your project name to enable, leave empty to disable
-WANDB_PROJECT=""   # e.g. "ri-hiernet-sweep"
+WANDB_PROJECT="ri-hiernet-sweep"
 WANDB_ARGS=""
 if [ -n "$WANDB_PROJECT" ]; then
   WANDB_ARGS="--wandb-project $WANDB_PROJECT --wandb-group $(basename $SWEEP_ROOT)"
