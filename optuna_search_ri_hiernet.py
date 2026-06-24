@@ -340,6 +340,8 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
         # ---- external loggers ----
         log_dict = {
             "lr": lr_now,
+            "epoch_time_s":         epoch_time_s,
+            "elapsed_s":            elapsed_s,
             "train/loss":           tr["loss"],
             "train/acc":            tr["accuracy"],
             "train/balacc":         tr["balanced_accuracy"],
