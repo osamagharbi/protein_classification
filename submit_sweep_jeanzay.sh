@@ -39,6 +39,10 @@ else
     mkdir -p "$SWEEP_ROOT/results"
 fi
 
+# sweep timestamp (YYYYMMDD_HHMMSS) pulled from the root name; used in the log dir
+SWEEP_TS=$(basename "$SWEEP_ROOT" | grep -oE '[0-9]{8}_[0-9]{6}' | head -1)
+[ -n "$SWEEP_TS" ] || SWEEP_TS=$(date +%Y%m%d_%H%M%S)
+
 echo "sweep root  : $SWEEP_ROOT"
 echo "tasks       : $N_CONFIGS configs x $N_SEEDS seeds = $TOTAL  (array 0-$LAST)"
 echo "seed range  : $SEED_OFFSET .. $(( SEED_OFFSET + N_SEEDS - 1 ))"
@@ -56,13 +60,19 @@ fi
 
 # ---------- Step 2: submit the training array ----------
 # Pass SWEEP_ROOT and SEED_OFFSET as positional args to the slurm script.
+# Logs go to logs/run_<arrayjobid>_<sweepts>/ . SLURM substitutes %A (array job id)
+# in the path but does NOT create the dir, so we mkdir it right after sbatch
+# returns the id (well before any task is scheduled and opens its .out file).
 ARRAY_JID=$(sbatch --parsable \
   --job-name=RIHIER_SWEEP \
   --array=0-${LAST} \
-  --output="$PROJECT/logs/log_%x_%A_%a.out" \
-  --error="$PROJECT/logs/log_%x_%A_%a.err" \
+  --output="$PROJECT/logs/run_%A_${SWEEP_TS}/log_%x_%A_%a.out" \
+  --error="$PROJECT/logs/run_%A_${SWEEP_TS}/log_%x_%A_%a.err" \
   slurm_sweep_jeanzay.slurm "$SWEEP_ROOT" "$SEED_OFFSET")
+LOG_DIR="$PROJECT/logs/run_${ARRAY_JID}_${SWEEP_TS}"
+mkdir -p "$LOG_DIR"
 echo "submitted array job : $ARRAY_JID"
+echo "logs ->               $LOG_DIR/"
 
 # ---------- Step 3: aggregate after the array finishes ----------
 AGG_JID=$(sbatch --parsable \
@@ -70,11 +80,12 @@ AGG_JID=$(sbatch --parsable \
   --dependency=afterany:${ARRAY_JID} \
   --account="$ACCOUNT" --qos=qos_gpu-dev --gres=gpu:1 \
   --constraint=v100-32g --cpus-per-task=10 --hint=nomultithread --time=00:20:00 \
-  --output="$PROJECT/logs/log_%x_%j.out" --error="$PROJECT/logs/log_%x_%j.err" \
+  --output="$LOG_DIR/log_%x_%j.out" --error="$LOG_DIR/log_%x_%j.err" \
   --wrap="module purge; module load pytorch-gpu/py3/2.8.0; source $WORK/myvenv/bin/activate; cd $PROJECT; python -u optuna_search_ri_hiernet.py --mode agg --result-dir $SWEEP_ROOT/results --graph-dir $DATA --train-labels-csv $DATA/train_split.csv --test-labels-csv $DATA/test_labels.csv")
 echo "submitted agg job   : $AGG_JID  (runs after array)"
 
 echo
 echo "watch:    squeue -u \$USER"
+echo "logs:     $LOG_DIR/"
 echo "results:  $SWEEP_ROOT/results/   (one cfgXXX_seedY.json per task)"
 echo "summary:  $SWEEP_ROOT/results/summary.json  +  best_command.sh  (after agg)"

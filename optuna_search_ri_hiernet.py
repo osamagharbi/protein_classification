@@ -156,6 +156,36 @@ def suggest_params(trial: optuna.Trial) -> dict:
     }
 
 
+def suggest_params_focused(trial: optuna.Trial) -> dict:
+    """Focused 2nd-sweep space, narrowed to the winning region of the first
+    100-config sweep (see runs/.../summary.json analysis). Concentrates samples
+    where the first sweep paid off, instead of re-exploring dead arms:
+      * patch_layers fixed to 1     (best marginal; 0/2/3 were worse)
+      * transformer backbone dropped (clearly worst); keep sage/gat/gin/graphormer
+      * readout restricted to max-based; nsample in {16,32}; patch_knn in {4,8}
+      * lr / weight_decay / dropout tightened around the champion (cfg89)
+    Returns the same complete key set as suggest_params()."""
+    patch_layers = 1                                         # fixed: the sweet spot
+    backbone = trial.suggest_categorical(
+        "patch_backbone", ["sage", "gat", "gin", "graphormer"])
+    patch_knn = (trial.suggest_categorical("patch_knn", [4, 8])
+                 if backbone in LOCAL_BACKBONES else 8)
+    return {
+        "nsample": trial.suggest_categorical("nsample", [16, 32]),
+        "patch_layers": patch_layers,
+        "patch_backbone": backbone,
+        "patch_knn": patch_knn,
+        "readout": trial.suggest_categorical("readout", ["max", "max+attn"]),
+        "width_scale": trial.suggest_categorical("width_scale", [1, 2]),
+        "lr": trial.suggest_float("lr", 3e-4, 1e-3, log=True),
+        "weight_decay": trial.suggest_float("weight_decay", 1e-5, 3e-4, log=True),
+        "dropout": trial.suggest_float("dropout", 0.20, 0.40),
+        "aug_scale": trial.suggest_categorical("aug_scale", [0.0, 0.2]),
+        "aug_dropout": trial.suggest_categorical("aug_dropout", [0.0, 0.05]),
+        "label_smoothing": trial.suggest_categorical("label_smoothing", [0.0, 0.1]),
+    }
+
+
 def build_model(params: dict, num_classes: int) -> RIHierNet:
     return RIHierNet(num_classes=num_classes, chem_dim=2,
                      patch_knn=params["patch_knn"], patch_layers=params["patch_layers"],
@@ -229,7 +259,7 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
         _csv_fh = open(history_file, "w", newline="", buffering=1)
         _csv_writer = csv.writer(_csv_fh)
         _csv_writer.writerow([
-            "epoch", "lr",
+            "epoch", "lr", "epoch_time_s", "elapsed_s",
             "tr_loss",
             "tr_acc", "tr_balacc",
             "tr_f1_micro", "tr_f1_macro", "tr_f1_weighted",
@@ -252,13 +282,18 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
     no_improve   = 0
 
     t0 = time.time()
+    epochs_trained = 0
     def _snap(): return {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
     for ep in range(args.search_epochs):
+        t_ep = time.time()
         tr = run_epoch(model, train_loader, crit, device, opt,  use_chem=True, desc="")
         va = run_epoch(model, val_loader,   crit, device, None, use_chem=True, desc="")
         sched.step()
         lr_now = opt.param_groups[0]["lr"]
+        epochs_trained = ep + 1
+        epoch_time_s = time.time() - t_ep            # wall-clock for this epoch
+        elapsed_s    = time.time() - t0              # cumulative since training start
 
         # update per-metric bests
         snap_cache = None
@@ -278,7 +313,7 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
         if _csv_writer is not None:
             def _fmt(d, key): return f"{d.get(key, float('nan')):.4f}"
             _csv_writer.writerow([
-                ep, f"{lr_now:.6e}",
+                ep, f"{lr_now:.6e}", f"{epoch_time_s:.2f}", f"{elapsed_s:.1f}",
                 _fmt(tr, "loss"),
                 _fmt(tr, "accuracy"),          _fmt(tr, "balanced_accuracy"),
                 _fmt(tr, "f1_micro"),          _fmt(tr, "f1_macro"),          _fmt(tr, "f1_weighted"),
@@ -366,6 +401,7 @@ def train_model(params, train_seed, tr_ds, va_ds, num_classes, device, args,
     sel_key = args.select_metric
     out = {"val_best": best_vals.get(sel_key, -1.0),
            "val_best_epoch": best_eps.get(sel_key, -1),
+           "epochs_trained": epochs_trained,
            "n_params": int(n_params), "seconds": round(time.time() - t0, 1),
            **{f"val_best_{s}": best_vals[mk] for mk, s in CKPT_METRICS},
            **{f"val_best_{s}_ep": best_eps[mk] for mk, s in CKPT_METRICS}}
@@ -425,16 +461,19 @@ def full_train_command(args, params, run_name="ri_hiernet_best"):
 # Mode: gen  (sample N configs once → configs.json)
 # ─────────────────────────────────────────────────────────────────────────────
 def cmd_gen(args):
+    space = getattr(args, "space", "broad")
+    space_fn = suggest_params_focused if space == "focused" else suggest_params
     sampler = TPESampler(seed=args.seed, multivariate=True, group=True)
     study = optuna.create_study(direction="maximize", sampler=sampler)
     configs = []
     for _ in range(args.n_configs):
         trial = study.ask()
-        configs.append(suggest_params(trial))
+        configs.append(space_fn(trial))
         study.tell(trial, 0.0)                               # constant value → space-filling draw
     out = Path(args.configs_file)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(configs, indent=2, default=float))
+    print(f"search space: {space}")
     # quick distribution summary
     bb = defaultdict(int); pl = defaultdict(int)
     for c in configs:
@@ -516,8 +555,9 @@ def cmd_agg(args):
     rows = []
     for cid, runs in by_cfg.items():
         row = {"config_id": cid, "n_seeds": len(runs), "params": runs[0]["params"]}
-        for m in (["val_best", "test_acc", "test_wf1", "test_mf1", "test_balacc"]
-                  if has_test else ["val_best"]):
+        for m in (["val_best", "test_acc", "test_wf1", "test_mf1", "test_balacc",
+                   "epochs_trained", "seconds"]
+                  if has_test else ["val_best", "epochs_trained", "seconds"]):
             arr = np.array([r[m] for r in runs if m in r], dtype=float)
             row[f"{m}_mean"] = float(arr.mean()) if arr.size else None
             row[f"{m}_std"] = float(arr.std()) if arr.size else None
@@ -664,6 +704,8 @@ def main():
                     choices=["accuracy", "f1_weighted", "f1_macro", "balanced_accuracy"])
     ap.add_argument("--device", type=int, default=0)
     # parallel sweep (gen/train/agg)
+    ap.add_argument("--space", choices=["broad", "focused"], default="broad",
+                    help="[gen] search space: broad (original 1st sweep) or focused (2nd sweep)")
     ap.add_argument("--n-configs", type=int, default=100, help="[gen] configs to sample")
     ap.add_argument("--n-seeds", type=int, default=5, help="[gen] seeds/config (for task-count math)")
     ap.add_argument("--configs-file", default=None, help="[gen out / train in] configs.json")
