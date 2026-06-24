@@ -558,6 +558,7 @@ def cmd_agg(args):
     for cid, runs in by_cfg.items():
         row = {"config_id": cid, "n_seeds": len(runs), "params": runs[0]["params"]}
         for m in (["val_best", "test_acc", "test_wf1", "test_mf1", "test_balacc",
+                   "test_prec_macro", "test_rec_macro", "test_map",
                    "epochs_trained", "seconds"]
                   if has_test else ["val_best", "epochs_trained", "seconds"]):
             arr = np.array([r[m] for r in runs if m in r], dtype=float)
@@ -595,6 +596,64 @@ def cmd_agg(args):
               f"({rank_key}={best[f'{rank_key}_mean']:.4f}±{best[f'{rank_key}_std']:.3f}):")
         print(cmd)
         print(f"\nsaved -> {rdir}/summary.json  +  best_command.sh")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Mode: eval  (re-score saved checkpoints on a corrected test set — NO retraining)
+# ─────────────────────────────────────────────────────────────────────────────
+def cmd_eval(args, device):
+    """Re-evaluate the saved per-run checkpoints on a (corrected) test split without
+    retraining. For every cfgXXX_seedY_best_<eval_ckpt>.pt under --result-dir, rebuild
+    the model from the params stored INSIDE the checkpoint, run inference on
+    --test-labels-csv, and overwrite ONLY the test_* fields of the matching
+    cfgXXX_seedY.json. val_best / epochs_trained / seconds / params are left untouched
+    (the test split never influenced training or checkpoint selection).
+
+    JSONs are rewritten in place, so back up cfg*.json + summary.json first if you want
+    to keep the pre-correction numbers. Afterwards re-run --mode agg to refresh summary.json.
+    """
+    rdir = Path(args.result_dir)
+    short = args.eval_ckpt
+    ckpts = sorted(rdir.glob(f"cfg*_seed*_best_{short}.pt"))
+    if not ckpts:
+        sys.exit(f"no checkpoints cfg*_seed*_best_{short}.pt under {rdir}")
+
+    test_ds = build_test_dataset(args)
+    eval_collate = make_collate(training=False)
+    test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False,
+                             num_workers=args.num_workers, collate_fn=eval_collate,
+                             pin_memory=True)
+    crit = nn.CrossEntropyLoss()
+
+    print(f"re-evaluating {len(ckpts)} '{short}' checkpoints on {args.test_labels_csv}\n",
+          flush=True)
+    n_ok = n_skip = 0
+    for cp in ckpts:
+        run_name = cp.name[: -len(f"_best_{short}.pt")]          # cfgXXX_seedY
+        jf = rdir / f"{run_name}.json"
+        if not jf.exists():
+            print(f"  skip {run_name}: {jf.name} missing", flush=True); n_skip += 1; continue
+        ck = torch.load(cp, map_location=device, weights_only=False)
+        model = build_model(ck["params"], ck.get("num_classes", 99)).to(device)
+        model.load_state_dict(ck["state_dict"]); model.eval()
+        te = run_epoch(model, test_loader, crit, device, None, use_chem=True, desc="")
+        rec = json.loads(jf.read_text())
+        rec.update({
+            "test_acc": te["accuracy"],      "test_wf1": te["f1_weighted"],
+            "test_mf1": te["f1_macro"],      "test_balacc": te["balanced_accuracy"],
+            "test_map": te.get("map_macro", float("nan")),
+            "test_prec_macro": te["precision_macro"], "test_rec_macro": te["recall_macro"],
+            "eval_ckpt": short, "eval_test_csv": str(args.test_labels_csv),
+        })
+        jf.write_text(json.dumps(rec, indent=2, default=float))
+        n_ok += 1
+        print(f"  {run_name}: acc={te['accuracy']:.4f} wf1={te['f1_weighted']:.4f} "
+              f"mf1={te['f1_macro']:.4f} balacc={te['balanced_accuracy']:.4f}", flush=True)
+    print(f"\nre-evaluated {n_ok} runs ({n_skip} skipped) on {test_ds.__len__()} test clouds.\n"
+          f"now refresh the summary:\n"
+          f"  python -u optuna_search_ri_hiernet.py --mode agg --result-dir {rdir} "
+          f"--graph-dir {args.graph_dir} --train-labels-csv {args.train_labels_csv} "
+          f"--test-labels-csv {args.test_labels_csv}", flush=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -682,7 +741,7 @@ def suggest_params_defaults(p: dict) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["search", "gen", "train", "agg"], default="search")
+    ap.add_argument("--mode", choices=["search", "gen", "train", "agg", "eval"], default="search")
     # data (same derivation as train_ri_hiernet.py)
     ap.add_argument("--data-dir", default="/home/ogharbi/datasets/SHREC25")
     ap.add_argument("--graph-subdir", default="ssl_graphs_1k_geom_enriched")
@@ -717,6 +776,10 @@ def main():
     ap.add_argument("--eval-test", action="store_true", default=True,
                     help="[train] evaluate best-val checkpoint on the test split")
     ap.add_argument("--no-eval-test", dest="eval_test", action="store_false")
+    ap.add_argument("--eval-ckpt", default="acc",
+                    choices=["acc", "balacc", "f1macro", "f1weighted", "f1micro", "map"],
+                    help="[eval] which per-metric checkpoint to re-score (default acc, "
+                         "matching the test_acc-ranked summary)")
     # search mode (adaptive study)
     ap.add_argument("--n-trials", type=int, default=60)
     ap.add_argument("--timeout", type=int, default=None)
@@ -756,6 +819,10 @@ def main():
         if not args.result_dir:
             sys.exit("--mode agg needs --result-dir")
         cmd_agg(args)
+    elif args.mode == "eval":
+        if not args.result_dir:
+            sys.exit("--mode eval needs --result-dir")
+        cmd_eval(args, device)
     else:
         cmd_search(args, device)
 
