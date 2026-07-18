@@ -40,7 +40,7 @@ export NUMEXPR_MAX_THREADS="${SLURM_CPUS_PER_TASK}"
 export PYTHONUNBUFFERED=1
 
 PROJECT="$WORK/protein_classification"
-DATA="$WORK/ssl_graphs_1k"                   # self-contained: train_set/ test_set/ + train_split.csv val_split.csv test_labels.csv
+DATA="$WORK/ssl_graphs_1k_geom_enriched_ri"  # self-contained (train/val/test CSVs inside); 21D features
 cd "$PROJECT" || { echo "cd $PROJECT failed"; exit 1; }
 mkdir -p "$PROJECT/logs"
 

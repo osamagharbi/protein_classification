@@ -271,18 +271,27 @@ def main():
     ap.add_argument("--backbones", nargs="+", default=BACKBONES,
                     help="backbones for --mode retrain-best / agg")
     # data / scaffold
-    ap.add_argument("--data-dir", default="/home/ogharbi/datasets/SHREC25/ssl_graphs_1k")
+    ap.add_argument("--data-dir",
+                    default="/home/ogharbi/datasets/SHREC25/ssl_graphs_1k_geom_enriched_ri",
+                    help="cluster dataset (self-contained; 21D features: 8D base + 13 geom)")
     ap.add_argument("--train-labels-csv", default=None,
-                    help="default: <data-dir>/train_split.csv")
+                    help="default: <data-dir>/train_split.csv (7395 train; disjoint from val)")
     ap.add_argument("--val-labels-csv", default=None,
-                    help="default: <data-dir>/val_split.csv")
+                    help="default: <data-dir>/val_split.csv (1849 val)")
     ap.add_argument("--test-labels-csv", default=None,
-                    help="default: <data-dir>/test_labels.csv (must be the "
-                         "class-consistent 88-class file, e.g. graphs_old/test_labels.csv)")
-    ap.add_argument("--keep-features", type=int, nargs="*", default=None,
-                    help="fixed feature indices (identical for all backbones); "
-                         "omit for 8D all-features scaffold "
-                         "[Potential_norm, NormalPotential_norm, nx,ny,nz, x,y,z]")
+                    help="default: <data-dir>/test_labels.csv (2311 test, 88 classes)")
+    # NOTE: this dataset stores 21 features. "all features" would be 21D, so we pin
+    # the feature scaffold EXPLICITLY and identically for every backbone. Default =
+    # base 8D [Potential_norm, NormalPotential_norm, nx,ny,nz, x,y,z] (indices 0-7).
+    ap.add_argument("--keep-features", type=int, nargs="*",
+                    default=[0, 1, 2, 3, 4, 5, 6, 7],
+                    help="fixed feature indices used identically for all backbones. "
+                         "Default 0-7 = base 8D. Full order (21D): 0 Potential_norm, "
+                         "1 NormalPotential_norm, 2-4 nx/ny/nz, 5-7 x/y/z, 8 dist_to_centroid, "
+                         "9-12 dist_to_anchor_0..3, 13 mean_neighbor_dist, 14 std_neighbor_dist, "
+                         "15 inv_mean_neighbor_dist, 16 laplacian_curvature_mag, "
+                         "17 laplacian_curvature_signed, 18 normal_variation, 19 planarity, "
+                         "20 surface_variation. Pass e.g. `--keep-features $(seq -s' ' 0 20)` for 21D.")
     ap.add_argument("--warmup-epochs", type=int, default=5)
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--num-workers", type=int, default=8)
