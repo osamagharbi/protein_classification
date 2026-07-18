@@ -44,12 +44,26 @@ CLASSIFY = PROJECT_ROOT / "classify_gnn.py"
 BACKBONES = ["gin", "gcn", "gat", "sage", "sgformer"]
 
 # ---------------------------------------------------------------------------- #
+# Feature sets — cumulative combinations of the BASE 8D channels only (indices
+# into the 21D vector; the extra 8..20 geom features are never used here).
+#   0 Potential_norm  1 NormalPotential_norm  2-4 nx,ny,nz  5-7 x,y,z
+# Order within a list is irrelevant to the GNN (per-channel input weights).
+# ---------------------------------------------------------------------------- #
+FEATURE_SETS = {
+    "coords":                     [5, 6, 7],                  # x,y,z                         (3D)
+    "coords_normals":             [2, 3, 4, 5, 6, 7],         # + normals                     (6D)
+    "coords_normals_normpot":     [1, 2, 3, 4, 5, 6, 7],      # + NormalPotential             (7D)
+    "coords_normals_normpot_pot": [0, 1, 2, 3, 4, 5, 6, 7],   # + Potential (full base 8D)    (8D)
+}
+
+# ---------------------------------------------------------------------------- #
 # Shared search space (identical for every backbone) + fixed scaffold
 # ---------------------------------------------------------------------------- #
 def suggest_params(trial: optuna.Trial) -> dict:
     """The one search space used for ALL backbones (the comparability guarantee).
     Only these knobs vary; everything else is the fixed scaffold below."""
     return {
+        "feature_set": trial.suggest_categorical("feature_set", list(FEATURE_SETS)),
         "lr": trial.suggest_float("lr", 3e-4, 2e-3, log=True),
         "weight_decay": trial.suggest_float("weight_decay", 1e-5, 1e-3, log=True),
         "dropout": trial.suggest_float("dropout", 0.1, 0.4),
@@ -64,10 +78,22 @@ def scaffold_args(args, backbone: str, params: dict, epochs: int,
                   run_name: str, seed: int) -> list[str]:
     """Build the classify_gnn.py argv for one config. The FIXED scaffold is applied
     identically to every backbone; `params` are the searched hyperparameters."""
+    # Resolve label CSVs explicitly (default: inside the dataset dir) so the run is
+    # deterministic and never falls back to sibling-directory auto-resolution — a
+    # real trap on the cluster, where only <data-dir> is copied. ssl_graphs_1k is
+    # self-contained: train_split.csv / val_split.csv / test_labels.csv all inside.
+    data = Path(args.data_dir)
+    train_csv = args.train_labels_csv or str(data / "train_split.csv")
+    val_csv = args.val_labels_csv or str(data / "val_split.csv")
+    test_csv = args.test_labels_csv or str(data / "test_labels.csv")
     cmd = [
         args.python_executable, str(args.classify_script),
         "--data-dir", args.data_dir,
         "--model", backbone,
+        # --- explicit labels (no sibling-dir fallback) ---
+        "--train-labels-csv", train_csv,
+        "--val-labels-csv", val_csv,
+        "--test-labels-csv", test_csv,
         # --- fixed scaffold (identical across backbones) ---
         "--class-weight-method", "inverse_sqrt",
         "--loss-type", "ce",
@@ -88,10 +114,15 @@ def scaffold_args(args, backbone: str, params: dict, epochs: int,
         "--pooling", params["pooling"],
         "--grad-clip", f"{params['grad_clip']:.4g}",
     ]
-    # Fixed feature scaffold: 8D (all) = no --keep-features. If a subset is given,
-    # it is applied identically to every backbone.
-    if args.keep_features:
-        cmd += ["--keep-features", *[str(i) for i in args.keep_features]]
+    # Feature selection. If the trial searched a feature_set (default), use its
+    # indices; otherwise fall back to the fixed --keep-features scaffold. Either
+    # way the exact channels are pinned (never the accidental 21D "all").
+    if params.get("feature_set") is not None:
+        feats = FEATURE_SETS[params["feature_set"]]
+    else:
+        feats = args.keep_features
+    if feats:
+        cmd += ["--keep-features", *[str(i) for i in feats]]
     return cmd
 
 
@@ -196,8 +227,9 @@ def cmd_retrain_best(args):
         if not cfg_path.exists():
             print(f"[skip] {bb}: {cfg_path} not found (run --mode search first)"); continue
         cfg = json.loads(cfg_path.read_text())
-        params = {k: cfg[k] for k in ("lr", "weight_decay", "dropout", "hidden_dim",
-                                      "num_layers", "pooling", "grad_clip")}
+        keys = ("feature_set", "lr", "weight_decay", "dropout", "hidden_dim",
+                "num_layers", "pooling", "grad_clip")
+        params = {k: cfg[k] for k in keys if k in cfg}
         for seed in args.seeds:
             run_name = f"flatgnn_best_{bb}_seed{seed}"
             cmd = scaffold_args(args, bb, params, args.retrain_epochs, run_name, seed=seed)
@@ -218,12 +250,15 @@ def cmd_agg(args):
                 per_seed.append(d)
         if not per_seed:
             rows.append({"backbone": bb, "n_seeds": 0}); continue
+        # winning feature set for this backbone (from its best_config)
+        bc = out_dir / f"best_config_{bb}.json"
+        feat = json.loads(bc.read_text()).get("feature_set") if bc.exists() else None
         def ms(key):
             xs = [r[key] for r in per_seed]
             return round(mean(xs), 4), round(pstdev(xs) if len(xs) > 1 else 0.0, 4)
         acc_m, acc_s = ms("accuracy"); f1_m, f1_s = ms("f1_macro")
         wf_m, wf_s = ms("f1_weighted"); ba_m, ba_s = ms("balanced_accuracy")
-        rows.append({"backbone": bb, "n_seeds": len(per_seed),
+        rows.append({"backbone": bb, "feature_set": feat, "n_seeds": len(per_seed),
                      "acc_mean": acc_m, "acc_std": acc_s,
                      "f1_macro_mean": f1_m, "f1_macro_std": f1_s,
                      "wf1_mean": wf_m, "wf1_std": wf_s,
@@ -259,10 +294,27 @@ def main():
     ap.add_argument("--backbones", nargs="+", default=BACKBONES,
                     help="backbones for --mode retrain-best / agg")
     # data / scaffold
-    ap.add_argument("--data-dir", default="/home/ogharbi/datasets/SHREC25/ssl_graphs_1k")
-    ap.add_argument("--keep-features", type=int, nargs="*", default=None,
-                    help="fixed feature indices (identical for all backbones); "
-                         "omit for 8D all-features scaffold")
+    ap.add_argument("--data-dir",
+                    default="/home/ogharbi/datasets/SHREC25/ssl_graphs_1k_geom_enriched_ri",
+                    help="cluster dataset (self-contained; 21D features: 8D base + 13 geom)")
+    ap.add_argument("--train-labels-csv", default=None,
+                    help="default: <data-dir>/train_split.csv (7395 train; disjoint from val)")
+    ap.add_argument("--val-labels-csv", default=None,
+                    help="default: <data-dir>/val_split.csv (1849 val)")
+    ap.add_argument("--test-labels-csv", default=None,
+                    help="default: <data-dir>/test_labels.csv (2311 test, 88 classes)")
+    # NOTE: this dataset stores 21 features. "all features" would be 21D, so we pin
+    # the feature scaffold EXPLICITLY and identically for every backbone. Default =
+    # base 8D [Potential_norm, NormalPotential_norm, nx,ny,nz, x,y,z] (indices 0-7).
+    ap.add_argument("--keep-features", type=int, nargs="*",
+                    default=[0, 1, 2, 3, 4, 5, 6, 7],
+                    help="fixed feature indices used identically for all backbones. "
+                         "Default 0-7 = base 8D. Full order (21D): 0 Potential_norm, "
+                         "1 NormalPotential_norm, 2-4 nx/ny/nz, 5-7 x/y/z, 8 dist_to_centroid, "
+                         "9-12 dist_to_anchor_0..3, 13 mean_neighbor_dist, 14 std_neighbor_dist, "
+                         "15 inv_mean_neighbor_dist, 16 laplacian_curvature_mag, "
+                         "17 laplacian_curvature_signed, 18 normal_variation, 19 planarity, "
+                         "20 surface_variation. Pass e.g. `--keep-features $(seq -s' ' 0 20)` for 21D.")
     ap.add_argument("--warmup-epochs", type=int, default=5)
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--num-workers", type=int, default=8)
