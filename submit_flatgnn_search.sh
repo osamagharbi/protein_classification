@@ -4,18 +4,20 @@
 # backbone (each with its own shared journal study), then chains a retrain+agg job
 # that depends on all of them.
 #
-#   per backbone : (array size) x (--n-trials) trials, %N concurrent GPUs
+#   per backbone : (array size) x (--n-trials=10) trials, %N concurrent GPUs
 #   backbones    : gin gcn gat sage sgformer   (flat-GNN-supported, published)
+#   search space : feature_set(4 base-8D combos) x lr x wd x dropout x hidden_dim
+#                  x num_layers x pooling x grad_clip  -> ~60 trials/backbone default
 #
 # Usage:
 #   ./submit_flatgnn_search.sh [WORKERS_PER_BACKBONE] [CONCURRENCY]
 #
 # Examples:
-#   ./submit_flatgnn_search.sh              # 4 workers/backbone, 4 concurrent
+#   ./submit_flatgnn_search.sh              # 6 workers/backbone (60 trials), 4 concurrent
 #   ./submit_flatgnn_search.sh 8 4          # 8 workers/backbone (80 trials), 4 at a time
 set -euo pipefail
 
-WORKERS="${1:-4}"
+WORKERS="${1:-6}"
 CONCURRENCY="${2:-4}"
 LAST=$(( WORKERS - 1 ))
 
@@ -31,7 +33,7 @@ mkdir -p "$SEARCH_ROOT/trials"
 SEARCH_TS=$(basename "$SEARCH_ROOT" | grep -oE '[0-9]{8}_[0-9]{6}' | head -1)
 
 echo "search root : $SEARCH_ROOT"
-echo "per backbone: array 0-$LAST (%$CONCURRENCY)  x  --n-trials(10) = $(( WORKERS * 10 )) trials"
+echo "per backbone: array 0-$LAST (%$CONCURRENCY)  x  --n-trials(10) = $(( WORKERS * 10 )) trials  (incl. feature_set search)"
 echo "backbones   : ${BACKBONES[*]}"
 
 # ---------- Step 1: one search array per backbone ----------

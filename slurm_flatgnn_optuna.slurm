@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=FLATGNN_OPT
 #SBATCH --time=08:00:00
-#SBATCH --array=0-3%4
+#SBATCH --array=0-5%4
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=10
 #SBATCH --gres=gpu:1
@@ -17,7 +17,10 @@
 # coordinates across workers -- identical mechanism to the branch's
 # slurm_optuna_jeanzay.slurm, but per-backbone and targeting the flat GNN.
 #
-#   total trials / backbone = (array size) x (--n-trials per worker)  = 4 x 10 = 40
+# The search space now includes a `feature_set` dimension (4 cumulative base-8D
+# combinations: coords / +normals / +normal_potential / +potential), so the budget
+# is raised to ~60 trials/backbone to cover it.
+#   total trials / backbone = (array size) x (--n-trials per worker)  = 6 x 10 = 60
 #   concurrency             = the %N in --array (here 4 GPUs at a time)
 #
 # Usage (normally submitted by submit_flatgnn_search.sh, which sets --array):
