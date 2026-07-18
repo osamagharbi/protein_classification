@@ -44,12 +44,26 @@ CLASSIFY = PROJECT_ROOT / "classify_gnn.py"
 BACKBONES = ["gin", "gcn", "gat", "sage", "sgformer"]
 
 # ---------------------------------------------------------------------------- #
+# Feature sets — cumulative combinations of the BASE 8D channels only (indices
+# into the 21D vector; the extra 8..20 geom features are never used here).
+#   0 Potential_norm  1 NormalPotential_norm  2-4 nx,ny,nz  5-7 x,y,z
+# Order within a list is irrelevant to the GNN (per-channel input weights).
+# ---------------------------------------------------------------------------- #
+FEATURE_SETS = {
+    "coords":                     [5, 6, 7],                  # x,y,z                         (3D)
+    "coords_normals":             [2, 3, 4, 5, 6, 7],         # + normals                     (6D)
+    "coords_normals_normpot":     [1, 2, 3, 4, 5, 6, 7],      # + NormalPotential             (7D)
+    "coords_normals_normpot_pot": [0, 1, 2, 3, 4, 5, 6, 7],   # + Potential (full base 8D)    (8D)
+}
+
+# ---------------------------------------------------------------------------- #
 # Shared search space (identical for every backbone) + fixed scaffold
 # ---------------------------------------------------------------------------- #
 def suggest_params(trial: optuna.Trial) -> dict:
     """The one search space used for ALL backbones (the comparability guarantee).
     Only these knobs vary; everything else is the fixed scaffold below."""
     return {
+        "feature_set": trial.suggest_categorical("feature_set", list(FEATURE_SETS)),
         "lr": trial.suggest_float("lr", 3e-4, 2e-3, log=True),
         "weight_decay": trial.suggest_float("weight_decay", 1e-5, 1e-3, log=True),
         "dropout": trial.suggest_float("dropout", 0.1, 0.4),
@@ -100,10 +114,15 @@ def scaffold_args(args, backbone: str, params: dict, epochs: int,
         "--pooling", params["pooling"],
         "--grad-clip", f"{params['grad_clip']:.4g}",
     ]
-    # Fixed feature scaffold: 8D (all) = no --keep-features. If a subset is given,
-    # it is applied identically to every backbone.
-    if args.keep_features:
-        cmd += ["--keep-features", *[str(i) for i in args.keep_features]]
+    # Feature selection. If the trial searched a feature_set (default), use its
+    # indices; otherwise fall back to the fixed --keep-features scaffold. Either
+    # way the exact channels are pinned (never the accidental 21D "all").
+    if params.get("feature_set") is not None:
+        feats = FEATURE_SETS[params["feature_set"]]
+    else:
+        feats = args.keep_features
+    if feats:
+        cmd += ["--keep-features", *[str(i) for i in feats]]
     return cmd
 
 
@@ -208,8 +227,9 @@ def cmd_retrain_best(args):
         if not cfg_path.exists():
             print(f"[skip] {bb}: {cfg_path} not found (run --mode search first)"); continue
         cfg = json.loads(cfg_path.read_text())
-        params = {k: cfg[k] for k in ("lr", "weight_decay", "dropout", "hidden_dim",
-                                      "num_layers", "pooling", "grad_clip")}
+        keys = ("feature_set", "lr", "weight_decay", "dropout", "hidden_dim",
+                "num_layers", "pooling", "grad_clip")
+        params = {k: cfg[k] for k in keys if k in cfg}
         for seed in args.seeds:
             run_name = f"flatgnn_best_{bb}_seed{seed}"
             cmd = scaffold_args(args, bb, params, args.retrain_epochs, run_name, seed=seed)
@@ -230,12 +250,15 @@ def cmd_agg(args):
                 per_seed.append(d)
         if not per_seed:
             rows.append({"backbone": bb, "n_seeds": 0}); continue
+        # winning feature set for this backbone (from its best_config)
+        bc = out_dir / f"best_config_{bb}.json"
+        feat = json.loads(bc.read_text()).get("feature_set") if bc.exists() else None
         def ms(key):
             xs = [r[key] for r in per_seed]
             return round(mean(xs), 4), round(pstdev(xs) if len(xs) > 1 else 0.0, 4)
         acc_m, acc_s = ms("accuracy"); f1_m, f1_s = ms("f1_macro")
         wf_m, wf_s = ms("f1_weighted"); ba_m, ba_s = ms("balanced_accuracy")
-        rows.append({"backbone": bb, "n_seeds": len(per_seed),
+        rows.append({"backbone": bb, "feature_set": feat, "n_seeds": len(per_seed),
                      "acc_mean": acc_m, "acc_std": acc_s,
                      "f1_macro_mean": f1_m, "f1_macro_std": f1_s,
                      "wf1_mean": wf_m, "wf1_std": wf_s,
