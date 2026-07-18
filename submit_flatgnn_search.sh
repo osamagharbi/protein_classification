@@ -50,11 +50,22 @@ done
 # join dependency list: retrain waits for ALL search arrays (afterok)
 DEP=$(IFS=:; echo "${SEARCH_JIDS[*]}")
 
-# ---------- Step 2: retrain best + aggregate (after all searches) ----------
+# ---------- Step 2: retrain-best array (5 backbones x 3 seeds = 15 tasks) ----------
+# afterok on every search array so best_config_<bb>.json exist first.
 RETRAIN_JID=$(sbatch --parsable \
     --dependency=afterok:${DEP} \
     slurm_flatgnn_retrain_best.slurm "$SEARCH_ROOT")
-echo "submitted retrain+agg : $RETRAIN_JID  (afterok: $DEP)"
+echo "submitted retrain array : $RETRAIN_JID  (afterok: $DEP)"
+
+# ---------- Step 3: aggregate (after the whole retrain array) ----------
+AGG_JID=$(sbatch --parsable \
+    --job-name=FLATGNN_AGG \
+    --dependency=afterany:${RETRAIN_JID} \
+    --account="$ACCOUNT" --qos=qos_gpu-dev --gres=gpu:1 \
+    --constraint=v100-32g --cpus-per-task=10 --hint=nomultithread --time=00:20:00 \
+    --output="$PROJECT/logs/log_%x_%j.out" --error="$PROJECT/logs/log_%x_%j.err" \
+    --wrap="module purge; module load pytorch-gpu/py3/2.8.0; source $WORK/myvenv/bin/activate; cd $PROJECT; python -u optuna_search_flatgnn.py --mode agg --backbones gin gcn gat sage sgformer --output-dir $SEARCH_ROOT --trial-output-dir $SEARCH_ROOT/retrain --seeds 1 2 3")
+echo "submitted agg job       : $AGG_JID  (afterany: $RETRAIN_JID)"
 
 echo
 echo "watch:    squeue -u \$USER"
