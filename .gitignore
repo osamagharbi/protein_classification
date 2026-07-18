@@ -17,7 +17,12 @@ env/
 experiments/
 runs/
 runs_pc/
+
+# Vendored / embedded external repos (kept out of history to avoid broken gitlinks)
 gvp-pytorch/
+dgcnn/
+masif/
+masif_corrupt_20260621_154310/
 
 # Trained models and tensor artifacts
 *.pt
@@ -35,6 +40,9 @@ gvp-pytorch/
 anomaly_results.json
 high_signal_results.json
 
+# Paper draft and its planning artifacts — kept local, not pushed to remote
+paper_gnn_shrec25/
+
 # Root-level notes/reports that are not required for code versioning
 CODE_REVIEW_FINAL.md
 CRITICAL_FIXES_V2.md
@@ -43,6 +51,8 @@ GRAPHSAGE_ADDED.md
 PATCH_OBJECTIVE_RESULTS_SUMMARY.md
 ROTATION_AUGMENTATION_README.md
 VAL_SPLIT_ZERO_FIXES.md
+PROJECT_OVERVIEW.md
+STUDY_READINESS_MATRIX.md
 
 # Generic temp/cache files
 *.tmp

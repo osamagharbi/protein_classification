@@ -76,6 +76,7 @@ def eval_run(tag, run, labeld, dev):
             patch_scalar_inject=cfg.get("patch_scalar_inject", False),
             patch_inject_all=cfg.get("patch_inject_all", False),
             three_level=three, mid_layers=cfg.get("mid_layers", 2),
+            pna_delta=cfg.get("pna_delta") or 6.0,
         ).to(dev)
         model.load_state_dict(torch.load(ck, map_location=dev, weights_only=False))
         model.eval()
