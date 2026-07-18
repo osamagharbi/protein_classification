@@ -64,10 +64,22 @@ def scaffold_args(args, backbone: str, params: dict, epochs: int,
                   run_name: str, seed: int) -> list[str]:
     """Build the classify_gnn.py argv for one config. The FIXED scaffold is applied
     identically to every backbone; `params` are the searched hyperparameters."""
+    # Resolve label CSVs explicitly (default: inside the dataset dir) so the run is
+    # deterministic and never falls back to sibling-directory auto-resolution — a
+    # real trap on the cluster, where only <data-dir> is copied. ssl_graphs_1k is
+    # self-contained: train_split.csv / val_split.csv / test_labels.csv all inside.
+    data = Path(args.data_dir)
+    train_csv = args.train_labels_csv or str(data / "train_split.csv")
+    val_csv = args.val_labels_csv or str(data / "val_split.csv")
+    test_csv = args.test_labels_csv or str(data / "test_labels.csv")
     cmd = [
         args.python_executable, str(args.classify_script),
         "--data-dir", args.data_dir,
         "--model", backbone,
+        # --- explicit labels (no sibling-dir fallback) ---
+        "--train-labels-csv", train_csv,
+        "--val-labels-csv", val_csv,
+        "--test-labels-csv", test_csv,
         # --- fixed scaffold (identical across backbones) ---
         "--class-weight-method", "inverse_sqrt",
         "--loss-type", "ce",
@@ -260,9 +272,17 @@ def main():
                     help="backbones for --mode retrain-best / agg")
     # data / scaffold
     ap.add_argument("--data-dir", default="/home/ogharbi/datasets/SHREC25/ssl_graphs_1k")
+    ap.add_argument("--train-labels-csv", default=None,
+                    help="default: <data-dir>/train_split.csv")
+    ap.add_argument("--val-labels-csv", default=None,
+                    help="default: <data-dir>/val_split.csv")
+    ap.add_argument("--test-labels-csv", default=None,
+                    help="default: <data-dir>/test_labels.csv (must be the "
+                         "class-consistent 88-class file, e.g. graphs_old/test_labels.csv)")
     ap.add_argument("--keep-features", type=int, nargs="*", default=None,
                     help="fixed feature indices (identical for all backbones); "
-                         "omit for 8D all-features scaffold")
+                         "omit for 8D all-features scaffold "
+                         "[Potential_norm, NormalPotential_norm, nx,ny,nz, x,y,z]")
     ap.add_argument("--warmup-epochs", type=int, default=5)
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--num-workers", type=int, default=8)

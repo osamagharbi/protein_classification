@@ -51,7 +51,7 @@ export PYTHONUNBUFFERED=1
 
 # ---------- Run ----------
 PROJECT="$WORK/protein_classification"
-DATA="$WORK/ssl_graphs_1k"                    # train_set/ test_set/ + train_split.csv/val_split.csv
+DATA="$WORK/ssl_graphs_1k"                    # self-contained: train_set/ test_set/ + train_split.csv val_split.csv test_labels.csv
 mkdir -p "$PROJECT/logs"
 cd "$PROJECT"
 

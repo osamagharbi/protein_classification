@@ -40,7 +40,7 @@ export NUMEXPR_MAX_THREADS="${SLURM_CPUS_PER_TASK}"
 export PYTHONUNBUFFERED=1
 
 PROJECT="$WORK/protein_classification"
-DATA="$WORK/ssl_graphs_1k"                   # train_set/ test_set/ + train_split.csv/val_split.csv
+DATA="$WORK/ssl_graphs_1k"                   # self-contained: train_set/ test_set/ + train_split.csv val_split.csv test_labels.csv
 cd "$PROJECT" || { echo "cd $PROJECT failed"; exit 1; }
 mkdir -p "$PROJECT/logs"
 
