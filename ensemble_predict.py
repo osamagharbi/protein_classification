@@ -47,6 +47,7 @@ def load_model(run_dir: Path, device):
         node_readout=cfg.get("node_readout", False),
         node_backbone=cfg.get("node_backbone", "gin"),
         patch_backbone=cfg.get("patch_backbone", "gin"),
+        pna_delta=cfg.get("pna_delta") or 6.0,
     ).to(device)
     model.load_state_dict(state)
     model.eval()

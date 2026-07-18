@@ -1159,10 +1159,11 @@ class FocalLoss(nn.Module):
         return loss.mean()
 
 
-def train_epoch(model, loader, optimizer, criterion, device, num_classes=None, 
-                use_rotation_aug=False, rotation_weight=0.1, test_time_aug=False):
+def train_epoch(model, loader, optimizer, criterion, device, num_classes=None,
+                use_rotation_aug=False, rotation_weight=0.1, test_time_aug=False,
+                grad_clip=0.0):
     """Train for one epoch with optional rotation augmentation.
-    
+
     Args:
         model: GNN model
         loader: DataLoader
@@ -1173,6 +1174,8 @@ def train_epoch(model, loader, optimizer, criterion, device, num_classes=None,
         use_rotation_aug: If True, apply random rotations during training
         rotation_weight: Weight for rotation prediction loss (multi-task learning)
         test_time_aug: If True, ensemble predictions from multiple rotations
+        grad_clip: If > 0, clip gradient norm to this value before the optimizer
+            step (opt-in; default 0.0 preserves prior unclipped behavior).
     """
     model.train()
     total_loss = 0
@@ -1252,6 +1255,8 @@ def train_epoch(model, loader, optimizer, criterion, device, num_classes=None,
 
         # Backward
         loss.backward()
+        if grad_clip and grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
 
         # Collect predictions
@@ -1414,6 +1419,11 @@ def main():
                        help='Max epochs (default: 500 with early stopping, or specify exact number)')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay')
+    parser.add_argument('--warmup-epochs', type=int, default=0,
+                       help='Linear LR warmup epochs before cosine annealing (default: 0 = no warmup, '
+                            'matching prior behavior). Mirrors classify_hierarchical_gnn.py warmup.')
+    parser.add_argument('--grad-clip', type=float, default=0.0,
+                       help='Clip gradient norm to this value (default: 0.0 = disabled, no clipping)')
     parser.add_argument('--patience', type=int, default=30,
                        help='Early stopping patience (epochs without val improvement)')
     parser.add_argument('--no-early-stopping', action='store_true',
@@ -1759,7 +1769,7 @@ def main():
     # Optimizer and loss
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=args.epochs, eta_min=args.lr * 0.01
+        optimizer, T_max=max(args.epochs - args.warmup_epochs, 1), eta_min=args.lr * 0.01
     )
     if args.loss_type == 'ce':
         criterion = nn.CrossEntropyLoss(weight=class_weights)
@@ -1807,15 +1817,25 @@ def main():
         print(f"\nEpoch {epoch+1}/{args.epochs}")
         print("-" * 70)
 
+        # Linear LR warmup: scale lr/10 -> lr over --warmup-epochs, then hand off
+        # to the cosine scheduler. No-op when warmup_epochs=0 (default), which
+        # preserves the exact prior behavior for all existing runs/backbones.
+        if args.warmup_epochs > 0 and epoch < args.warmup_epochs:
+            warmup_factor = (epoch + 1) / args.warmup_epochs
+            for pg in optimizer.param_groups:
+                pg['lr'] = args.lr * warmup_factor
+
         # Train
         train_metrics = train_epoch(
-            model, train_loader, optimizer, criterion, device, 
+            model, train_loader, optimizer, criterion, device,
             num_classes=num_classes,
             use_rotation_aug=args.rotation_aug,
-            rotation_weight=args.rotation_weight
+            rotation_weight=args.rotation_weight,
+            grad_clip=args.grad_clip
         )
 
-        scheduler.step()
+        if epoch >= args.warmup_epochs:
+            scheduler.step()
 
         # Validate (if validation set exists)
         if val_loader is not None:

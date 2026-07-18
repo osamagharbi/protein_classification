@@ -1064,6 +1064,12 @@ def main():
         print(f"  PNA delta (avg in-degree): {pna_delta:.2f}")
     elif pna_delta is None:
         pna_delta = 6.0
+    args.pna_delta = pna_delta  # persist the resolved value so it round-trips
+                                 # through final_results.json / cfg_out for any
+                                 # downstream reload (ensemble_predict.py,
+                                 # reeval_all_90class.py) to reconstruct the
+                                 # exact trained model instead of silently
+                                 # falling back to the class default (6.0).
 
     # xyz_slice: dims of xyz in the node feature vector (for msg_gin and ri_gin)
     _xyz_sl = slice(5, 8)  # default for all/geom_14d_raw; coords_normals uses 0:3
