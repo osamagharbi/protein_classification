@@ -1181,6 +1181,14 @@ def main():
 
     print(f"train={len(train_ds)} val={len(val_ds)} test={len(test_ds)} classes={num_classes}")
 
+    # DataLoader overhead-only tuning (numerically neutral — identical batches/order):
+    # keep workers alive across epochs instead of re-spawning them every epoch, and
+    # prefetch a few more batches (spare RAM) to keep the GPU fed. No effect on results.
+    _loader_extra = {}
+    if args.num_workers > 0:
+        _loader_extra["persistent_workers"] = True
+        _loader_extra["prefetch_factor"] = 4
+
     # oversampling: weight each sample by 1/count^power
     if args.balanced_sampler:
         labels_list = [train_labels[full_train.items[i][0]] for i in
@@ -1193,16 +1201,18 @@ def main():
         train_collate = (collate_aug(args.aug_scale_std, args.aug_jitter_std, args.feature_mode)
                          if args.augment and not three_level else _col)
         train_loader = DataLoader(train_ds, batch_size=args.batch_size, sampler=sampler,
-                                  num_workers=args.num_workers, collate_fn=train_collate)
+                                  num_workers=args.num_workers, collate_fn=train_collate,
+                                  **_loader_extra)
     else:
         train_collate = (collate_aug(args.aug_scale_std, args.aug_jitter_std, args.feature_mode)
                          if args.augment and not three_level else _col)
         train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
-                                  num_workers=args.num_workers, collate_fn=train_collate)
+                                  num_workers=args.num_workers, collate_fn=train_collate,
+                                  **_loader_extra)
     val_loader  = DataLoader(val_ds,  batch_size=args.batch_size, shuffle=False,
-                             num_workers=args.num_workers, collate_fn=_col)
+                             num_workers=args.num_workers, collate_fn=_col, **_loader_extra)
     test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False,
-                             num_workers=args.num_workers, collate_fn=_col)
+                             num_workers=args.num_workers, collate_fn=_col, **_loader_extra)
 
     sample = full_train[0][0]
     in_dim = sample.ndata["attr"].shape[1]
