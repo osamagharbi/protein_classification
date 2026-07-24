@@ -42,6 +42,7 @@ high_signal_results.json
 
 # Paper draft and its planning artifacts — kept local, not pushed to remote
 paper_gnn_shrec25/
+paper_hiergin_shrec19/
 
 # Root-level notes/reports that are not required for code versioning
 CODE_REVIEW_FINAL.md
@@ -53,6 +54,17 @@ ROTATION_AUGMENTATION_README.md
 VAL_SPLIT_ZERO_FIXES.md
 PROJECT_OVERVIEW.md
 STUDY_READINESS_MATRIX.md
+
+# Training run outputs (large; kept local) — includes grid study roots
+runs/
+runs_shrec19/
+runs_shrec21/
+runs_shrec21_github/
+runs_shrec25/
+
+# Rendered figures / analysis artifacts (kept local)
+*.png
+analysis/
 
 # Generic temp/cache files
 *.tmp

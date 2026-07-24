@@ -35,7 +35,8 @@ from pathlib import Path
 from tqdm import tqdm
 import json
 from datetime import datetime
-from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import (accuracy_score, balanced_accuracy_score, f1_score, precision_score,
+                              recall_score, multilabel_confusion_matrix)
 
 import dgl
 from dgl.nn.pytorch import GATConv, GraphConv, GINConv, SAGEConv
@@ -1126,6 +1127,19 @@ def compute_metrics(y_true, y_pred, num_classes=None):
             labels=labels,
         )
     
+    # TPR (sensitivity/recall) and TNR (specificity), macro-averaged one-vs-rest.
+    # multilabel_confusion_matrix over a fixed label list gives one 2x2 [[TN,FP],[FN,TP]]
+    # per class even for classes absent from y_true/y_pred, matching the `labels=labels`
+    # behavior used elsewhere in this function for imbalanced/rare-class splits.
+    mcm_labels = labels if labels is not None else sorted(set(y_true) | set(y_pred))
+    mcm = multilabel_confusion_matrix(y_true, y_pred, labels=mcm_labels)
+    tn = mcm[:, 0, 0].astype(float)
+    fp = mcm[:, 0, 1].astype(float)
+    fn = mcm[:, 1, 0].astype(float)
+    tp = mcm[:, 1, 1].astype(float)
+    tpr_per_class = np.divide(tp, tp + fn, out=np.zeros_like(tp), where=(tp + fn) > 0)
+    tnr_per_class = np.divide(tn, tn + fp, out=np.zeros_like(tn), where=(tn + fp) > 0)
+
     metrics = {
         'accuracy': accuracy_score(y_true, y_pred),
         'balanced_accuracy': balanced_accuracy,
@@ -1134,6 +1148,8 @@ def compute_metrics(y_true, y_pred, num_classes=None):
         'f1_weighted': f1_score(y_true, y_pred, average='weighted', zero_division=0, labels=labels),
         'precision_macro': precision_score(y_true, y_pred, average='macro', zero_division=0, labels=labels),
         'recall_macro': recall_score(y_true, y_pred, average='macro', zero_division=0, labels=labels),
+        'tpr_macro': float(tpr_per_class.mean()),
+        'tnr_macro': float(tnr_per_class.mean()),
     }
     return metrics
 

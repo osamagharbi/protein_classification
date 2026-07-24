@@ -21,7 +21,7 @@ Usage:
     --pool meanmax --readout max --batch-size 64 --device 0
 """
 from __future__ import annotations
-import sys, argparse, os, json, math
+import sys, argparse, os, json, math, time
 from pathlib import Path
 from datetime import datetime
 
@@ -640,7 +640,7 @@ class HierarchicalGNN(nn.Module):
                  node_readout=False, node_backbone="gin", patch_backbone="gin",
                  pna_delta=6.0, scalar_inject=False, patch_scalar_inject=False,
                  patch_inject_all=False, three_level=False, mid_layers=2,
-                 xyz_slice=slice(5, 8)):
+                 xyz_slice=slice(5, 8), proj_dim=128):
         super().__init__()
         self.pool = pool
         self.readout = readout
@@ -712,6 +712,13 @@ class HierarchicalGNN(nn.Module):
             nn.Linear(head_in, hidden_dim // 2), nn.ReLU(),
             nn.Dropout(dropout), nn.Linear(hidden_dim // 2, num_classes),
         )
+        # SupCon projection head (opt-in via forward(..., return_proj=True); unused
+        # and untouched by gradients when supcon_weight=0, so existing checkpoints
+        # remain loadable and every non-SupCon call site is unaffected).
+        self.proj_head = nn.Sequential(
+            nn.Linear(head_in, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, proj_dim),
+        )
 
     def _scatter(self, h, gpid, P):
         if self.pool == "attn":
@@ -742,12 +749,19 @@ class HierarchicalGNN(nn.Module):
             return mx
         return torch.cat([mean, mx], dim=1)
 
-    def forward(self, bn, bp, gpid, bm=None, mid_gpid=None):
+    def forward(self, bn, bp, gpid, bm=None, mid_gpid=None, return_proj=False, return_embedding=False):
         """Forward pass.
 
         Standard mode: forward(bn, bp, gpid)
         Three-level:   forward(bn, bp, gpid, bm=mid_graph, mid_gpid=node_to_mid)
           where gpid = mid_to_final assignment.
+        return_proj: when True, also return the L2-normalised SupCon projection
+          (logits, proj); default False preserves the original single-tensor
+          return for every existing caller.
+        return_embedding: when True, also return the pre-head pooled graph
+          representation `hg` (used for retrieval/similarity, e.g. SHREC21) --
+          default False preserves the original return signature for every
+          existing caller (SHREC19/25 training and eval are unaffected).
         """
         h = bn.ndata["attr"]
         # cache the 2 scalar channels (Potential_norm, NormalPotential_norm) at
@@ -853,38 +867,89 @@ class HierarchicalGNN(nn.Module):
             with bn.local_scope():
                 bn.ndata["h"] = h
                 hg = torch.cat([hg, dgl.mean_nodes(bn, "h"), dgl.max_nodes(bn, "h")], dim=1)
+        if return_proj and return_embedding:
+            return self.head(hg), F.normalize(self.proj_head(hg), dim=-1), hg
+        if return_proj:
+            return self.head(hg), F.normalize(self.proj_head(hg), dim=-1)
+        if return_embedding:
+            return self.head(hg), hg
         return self.head(hg)
 
 
 # --------------------------------------------------------------------------- #
 # Train / eval
 # --------------------------------------------------------------------------- #
-def run_epoch(model, loader, criterion, device, optimizer=None, num_classes=None, desc=""):
+def supcon_loss(proj, labels, temp=0.1):
+    """Supervised contrastive loss (Khosla et al. 2020) on L2-normalised
+    projections. Ported from train_ri_hiernet.py's tested implementation."""
+    B = proj.shape[0]
+    sim = (proj @ proj.T) / temp
+    self_mask = ~torch.eye(B, dtype=torch.bool, device=proj.device)
+    pos_mask = (labels.view(-1, 1) == labels.view(1, -1)) & self_mask
+    sim = sim - sim.max(dim=1, keepdim=True)[0].detach()
+    exp = torch.exp(sim) * self_mask
+    log_prob = sim - torch.log(exp.sum(1, keepdim=True) + 1e-12)
+    pos_count = pos_mask.sum(1)
+    loss = -(pos_mask * log_prob).sum(1) / pos_count.clamp(min=1)
+    loss = loss[pos_count > 0]
+    return loss.mean() if loss.numel() > 0 else proj.new_zeros(())
+
+
+def run_epoch(model, loader, criterion, device, optimizer=None, num_classes=None, desc="",
+              supcon_weight=0.0, supcon_temp=0.1, collect_scores=False):
     train = optimizer is not None
     model.train() if train else model.eval()
     total_loss, preds, labs = 0.0, [], []
+    scores = [] if collect_scores else None
     ctx = torch.enable_grad() if train else torch.no_grad()
+    use_supcon = supcon_weight > 0
     with ctx:
         for batch in tqdm(loader, desc=desc, leave=False):
             if len(batch) == 6:  # three-level: (bn, bm, bp, mid_gpid, gpid, y)
                 bn, bm, bp, mid_gpid, gpid, y = batch
                 bn = bn.to(device); bm = bm.to(device); bp = bp.to(device)
                 mid_gpid = mid_gpid.to(device); gpid = gpid.to(device); y = y.to(device)
-                logits = model(bn, bp, gpid, bm, mid_gpid)
+                out = model(bn, bp, gpid, bm, mid_gpid, return_proj=use_supcon)
             else:
                 bn, bp, gpid, y = batch
                 bn = bn.to(device); bp = bp.to(device); gpid = gpid.to(device); y = y.to(device)
-                logits = model(bn, bp, gpid)
-            loss = criterion(logits, y)
+                out = model(bn, bp, gpid, return_proj=use_supcon)
+            if use_supcon:
+                logits, proj = out
+                loss = criterion(logits, y) + supcon_weight * supcon_loss(proj, y, supcon_temp)
+            else:
+                logits = out
+                loss = criterion(logits, y)
             if train:
                 optimizer.zero_grad(); loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
             total_loss += loss.item()
             preds.extend(logits.argmax(1).cpu().numpy()); labs.extend(y.cpu().numpy())
+            if collect_scores:
+                scores.append(F.softmax(logits, dim=1).detach().cpu().numpy())
     m = compute_metrics(labs, preds, num_classes=num_classes)
     m["loss"] = total_loss / max(len(loader), 1)
+    if collect_scores:
+        return m, np.asarray(labs), np.concatenate(scores, axis=0)
     return m
+
+
+def compute_map(labs, scores, num_classes):
+    """One-vs-rest mean average precision from softmax scores, averaged over the
+    classes present in `labs` (matches the appendix/ProCLR-style protocol)."""
+    from sklearn.metrics import average_precision_score
+    labs = np.asarray(labs)
+    Y = np.zeros((len(labs), num_classes), dtype=float)
+    Y[np.arange(len(labs)), labs] = 1.0
+    present = Y.sum(0) > 0
+    if present.sum() == 0:
+        return float("nan")
+    try:
+        ap = average_precision_score(Y[:, present], scores[:, present], average=None)
+        return float(np.mean(ap))
+    except Exception:
+        return float("nan")
 
 
 def main():
@@ -951,6 +1016,12 @@ def main():
                     help="Label smoothing for CrossEntropyLoss (0=off, 0.1 recommended)")
     ap.add_argument("--focal-gamma", type=float, default=2.0,
                     help="Focal loss focusing parameter (only used when --loss-type focal)")
+    ap.add_argument("--supcon-weight", type=float, default=0.0,
+                    help="Weight of the supervised contrastive loss added to CE (0=off)")
+    ap.add_argument("--supcon-temp", type=float, default=0.1,
+                    help="Temperature for the supervised contrastive loss")
+    ap.add_argument("--proj-dim", type=int, default=128,
+                    help="Output dim of the SupCon projection head")
     ap.add_argument("--class-weight-method", default="inverse_sqrt",
                     choices=["none", "inverse", "inverse_sqrt", "effective_samples"])
     ap.add_argument("--augment", action="store_true",
@@ -1087,10 +1158,13 @@ def main():
                             patch_inject_all=args.patch_inject_all,
                             three_level=three_level,
                             mid_layers=args.mid_layers,
-                            xyz_slice=_xyz_sl).to(device)
+                            xyz_slice=_xyz_sl,
+                            proj_dim=args.proj_dim).to(device)
+    n_params = int(sum(p.numel() for p in model.parameters()))
+    n_params_trainable = int(sum(p.numel() for p in model.parameters() if p.requires_grad))
     print(f"in_dim={in_dim} | node_backbone={args.node_backbone} | patch_backbone={args.patch_backbone}"
           f" | ssl={args.ssl_emb_dir is not None}"
-          f" | params={sum(p.numel() for p in model.parameters()):,}")
+          f" | params={n_params:,}")
 
     if args.class_weight_method == "none":
         weights = None
@@ -1112,7 +1186,9 @@ def main():
         cosine_sched = None
 
     best_val_f1, best_state, wait = -1.0, None, 0
+    best_epoch = 0
     history = []
+    train_t0 = time.perf_counter()
     for ep in range(1, args.epochs + 1):
         # linear warmup: scale LR from lr/10 → lr over warmup_epochs
         if cosine_sched and ep <= args.warmup_epochs:
@@ -1120,7 +1196,10 @@ def main():
             for pg in optimizer.param_groups:
                 pg["lr"] = args.lr * warmup_factor
 
-        tr = run_epoch(model, train_loader, criterion, device, optimizer, num_classes, f"ep{ep} train")
+        tr = run_epoch(model, train_loader, criterion, device, optimizer, num_classes, f"ep{ep} train",
+                      supcon_weight=args.supcon_weight, supcon_temp=args.supcon_temp)
+        # SupCon is a training-time representation regulariser only; val/test stay
+        # pure-CE so metrics remain directly comparable across SupCon and non-SupCon runs.
         va = run_epoch(model, val_loader, criterion, device, None, num_classes, f"ep{ep} val")
         history.append({"epoch": ep, "train": tr, "val": va})
 
@@ -1131,31 +1210,47 @@ def main():
 
         if va["f1_macro"] > best_val_f1:
             best_val_f1 = va["f1_macro"]
+            best_epoch = ep
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
             torch.save(best_state, run_dir / "best_model.pt")
             wait = 0
             print(f"  * new best val f1 {best_val_f1:.4f} (acc {va['accuracy']:.4f})")
         else:
             wait += 1
-            if cosine_sched is None and wait >= args.patience:
-                print(f"  early stop at epoch {ep}")
+            if wait >= args.patience:
+                print(f"  early stop at epoch {ep} (no val f1 improvement for {args.patience} epochs)")
                 break
 
         if cosine_sched and ep > args.warmup_epochs:
             cosine_sched.step()
 
+    train_time_sec = time.perf_counter() - train_t0
+    epochs_run = len(history)
+
     if best_state:
         model.load_state_dict(best_state)
-    test_m = run_epoch(model, test_loader, criterion, device, None, num_classes, "test")
+    test_m, test_labs, test_scores = run_epoch(model, test_loader, criterion, device, None,
+                                               num_classes, "test", collect_scores=True)
+    test_m["mAP"] = compute_map(test_labs, test_scores, num_classes)
     print("\n=== FINAL TEST (best val model) ===")
-    for k in ["accuracy", "balanced_accuracy", "f1_macro", "f1_weighted"]:
+    for k in ["accuracy", "balanced_accuracy", "f1_macro", "f1_weighted",
+              "tpr_macro", "tnr_macro", "mAP"]:
         print(f"  {k:18s}: {test_m[k]:.4f}")
+    print(f"\n[timing] params={n_params:,} | trainable={n_params_trainable:,} | "
+          f"epochs_run={epochs_run} | best_epoch={best_epoch} | "
+          f"train_time_sec={train_time_sec:.1f} ({train_time_sec/60:.1f} min) | "
+          f"sec_per_epoch={train_time_sec/max(epochs_run,1):.2f}")
 
     cfg_out = vars(args)
     cfg_out["in_dim"] = in_dim
     cfg_out["num_classes"] = num_classes
     json.dump({"final_test_metrics": test_m, "config": cfg_out,
-               "best_val_f1": best_val_f1, "history": history},
+               "best_val_f1": best_val_f1,
+               "n_params": n_params, "n_params_trainable": n_params_trainable,
+               "epochs_run": epochs_run, "best_epoch": best_epoch,
+               "train_time_sec": train_time_sec,
+               "sec_per_epoch": train_time_sec / max(epochs_run, 1),
+               "history": history},
               open(run_dir / "final_results.json", "w"), indent=2, default=float)
     print(f"\nsaved -> {run_dir/'final_results.json'}")
 
