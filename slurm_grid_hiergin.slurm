@@ -11,22 +11,20 @@
 #SBATCH --output=logs/log_%x_%A_%a.out
 #SBATCH --error=logs/log_%x_%A_%a.err
 #
-# One array task = ONE grid point (backbone x hidden x seed) = ONE GPU.
-# Max-GPU parallelism comes from the array's %CONCURRENCY (set by submit script),
-# NOT from splitting a single job over 4 GPUs. Identical philosophy to the riconv /
-# flat-GNN launches: many independent single-GPU trainings running at once.
+# Array body for run_study.sh. One array task = ONE grid point
+# (backbone x hidden x seed) = ONE GPU. Max-GPU parallelism comes from the array's
+# %CONCURRENCY; each task is an independent single-GPU training (no DDP).
 #
 # The cell (dataset / feature-group / patch-k) and the grid axes are passed via
-# environment variables exported by submit_grid_hiergin.sh, so this file never
-# needs editing.
+# environment variables exported by run_study.sh, so this file never needs editing.
 #
-# Required env (exported by submit script):
+# Required env (exported by run_study.sh):
 #   DATA_ROOT      dir containing the graph dirs           ($WORK on Jean-Zay)
-#   GRID_ROOT      output root for this study
+#   GRID_ROOT      output root for this cell
 #   DATASET        shrec19_protein | shrec19_species | shrec25
 #   FEATURE_GROUP  geom | enriched
-#   PATCH_K        16 | 32 | 64 | 128 | 256
-#   BACKBONES HIDDEN_DIMS SEEDS   space-separated lists (must match submit-time plan)
+#   PATCH_K        8 | 16 | 32 | 64 | 128 | 256
+#   BACKBONES HIDDEN_DIMS SEEDS   space-separated lists (must match the plan)
 #
 set -euo pipefail
 set -x

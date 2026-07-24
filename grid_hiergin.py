@@ -158,6 +158,21 @@ def cmd_plan(args):
             print(f"  [{i:3d}] {run_tag(args.dataset, args.feature_group, args.patch_k, bb, h, s)}")
 
 
+def cmd_check(args):
+    """Validate that a cell's data (graph dir, patch dir, label CSVs) exists."""
+    graph_dir, assign_dir, tr, te, fmode = resolve_paths(
+        args.data_root, args.dataset, args.feature_group, args.patch_k)
+    missing = [p for p in (graph_dir, assign_dir) if not os.path.isdir(p)]
+    missing += [c for c in (tr, te) if c is not None and not os.path.isfile(c)]
+    if missing:
+        print(f"MISSING for {args.dataset}/{args.feature_group}/k{args.patch_k}:")
+        for m in missing:
+            print(f"  {m}")
+        sys.exit(1)
+    print(f"OK {args.dataset}/{args.feature_group}/k{args.patch_k} "
+          f"(feature_mode={fmode}, graph_dir={os.path.basename(graph_dir)})")
+
+
 def cmd_run(args):
     grid = build_grid(args.backbones, args.hidden_dims, args.seeds)
     if not (0 <= args.task_id < len(grid)):
@@ -205,81 +220,136 @@ def cmd_run(args):
     sys.exit(rc)
 
 
-def cmd_agg(args):
-    runs_dir = Path(args.grid_root) / "runs"
+ROW_COLS = ["tag", "dataset", "feature_group", "patch_k", "backbone", "hidden",
+            "seed", "in_dim", "num_classes", "n_params", "n_params_trainable",
+            "epochs_run", "best_epoch", "train_time_sec", "sec_per_epoch",
+            "acc", "bal_acc", "f1_macro", "f1_weighted", "tpr_macro", "tnr_macro", "mAP"]
+SUMMARY_METRICS = ["mAP", "f1_weighted", "f1_macro", "bal_acc", "acc",
+                   "tpr_macro", "tnr_macro", "train_time_sec", "sec_per_epoch"]
+
+
+def _collect_rows(runs_dir, dataset, feature_group, patch_k):
+    """One flat row per completed run under runs_dir."""
     rows = []
-    for fr in sorted(runs_dir.glob("*/final_results.json")):
-        d = json.load(open(fr))
-        c = d.get("config", {})
-        m = d.get("final_test_metrics", {})
+    for fr in sorted(Path(runs_dir).glob("*/final_results.json")):
+        d = json.load(open(fr)); c = d.get("config", {}); m = d.get("final_test_metrics", {})
         rows.append({
-            "tag": fr.parent.name,
-            "dataset": args.dataset, "feature_group": args.feature_group,
-            "patch_k": c.get("assign_dir", "").split("_k")[-1],
+            "tag": fr.parent.name, "dataset": dataset, "feature_group": feature_group,
+            "patch_k": patch_k if patch_k is not None else c.get("assign_dir", "").split("_k")[-1],
             "backbone": c.get("node_backbone"), "hidden": c.get("hidden_dim"),
-            "seed": c.get("seed"), "in_dim": c.get("in_dim"),
-            "num_classes": c.get("num_classes"),
+            "seed": c.get("seed"), "in_dim": c.get("in_dim"), "num_classes": c.get("num_classes"),
             "n_params": d.get("n_params"), "n_params_trainable": d.get("n_params_trainable"),
             "epochs_run": d.get("epochs_run"), "best_epoch": d.get("best_epoch"),
             "train_time_sec": d.get("train_time_sec"), "sec_per_epoch": d.get("sec_per_epoch"),
             "acc": m.get("accuracy"), "bal_acc": m.get("balanced_accuracy"),
             "f1_macro": m.get("f1_macro"), "f1_weighted": m.get("f1_weighted"),
-            "tpr_macro": m.get("tpr_macro"), "tnr_macro": m.get("tnr_macro"),
-            "mAP": m.get("mAP"),
+            "tpr_macro": m.get("tpr_macro"), "tnr_macro": m.get("tnr_macro"), "mAP": m.get("mAP"),
         })
-    if not rows:
-        sys.exit(f"[agg] no final_results.json under {runs_dir}")
-    cols = list(rows[0].keys())
-    csv_path = Path(args.grid_root) / "summary.csv"
-    with open(csv_path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=cols); w.writeheader(); w.writerows(rows)
+    return rows
 
-    # mean +/- std over seeds, grouped by (backbone, hidden)
+
+def _summarize(rows):
+    """mean +/- std over seeds, grouped by (dataset, feature, patch_k, backbone, hidden)."""
     import statistics as st
     groups = {}
     for r in rows:
-        groups.setdefault((r["backbone"], r["hidden"]), []).append(r)
-    summary = []
-    for (bb, h), rs in sorted(groups.items(), key=lambda kv: (str(kv[0][0]), kv[0][1] or 0)):
-        def ms(key):
-            vals = [x[key] for x in rs if isinstance(x[key], (int, float))]
-            if not vals: return (None, None)
-            return (st.mean(vals), st.pstdev(vals) if len(vals) > 1 else 0.0)
-        entry = {"backbone": bb, "hidden": h, "n_seeds": len(rs),
-                 "n_params": rs[0]["n_params"]}
-        for key in ["mAP", "f1_weighted", "f1_macro", "bal_acc", "acc",
-                    "tpr_macro", "tnr_macro", "train_time_sec", "sec_per_epoch"]:
-            mean, sd = ms(key)
-            entry[f"{key}_mean"] = mean; entry[f"{key}_std"] = sd
-        summary.append(entry)
-    json.dump({"cell": {"dataset": args.dataset, "feature_group": args.feature_group,
-                        "patch_k": args.patch_k},
-               "per_config": summary, "n_runs": len(rows)},
-              open(Path(args.grid_root) / "summary.json", "w"), indent=2, default=float)
+        key = (r["dataset"], r["feature_group"], str(r["patch_k"]), r["backbone"], r["hidden"])
+        groups.setdefault(key, []).append(r)
+    out = []
+    for key, rs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1], int(kv[0][2] or 0),
+                                                          str(kv[0][3]), kv[0][4] or 0)):
+        ds, fg, pk, bb, h = key
+        e = {"dataset": ds, "feature_group": fg, "patch_k": pk, "backbone": bb, "hidden": h,
+             "n_seeds": len(rs), "n_params": rs[0]["n_params"]}
+        for k in SUMMARY_METRICS:
+            vals = [x[k] for x in rs if isinstance(x[k], (int, float))]
+            e[f"{k}_mean"] = st.mean(vals) if vals else None
+            e[f"{k}_std"] = (st.pstdev(vals) if len(vals) > 1 else 0.0) if vals else None
+        out.append(e)
+    return out
 
-    print(f"[agg] {len(rows)} runs -> {csv_path}")
-    print(f"[agg] per-config mean+/-std -> {Path(args.grid_root)/'summary.json'}")
-    print(f"\n{'backbone':10s} {'hid':>4s} {'seeds':>5s} {'mAP':>16s} {'F1w':>16s} {'min/run':>8s}")
+
+def _write_tables(rows, out_dir, prefix, meta):
+    out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / f"{prefix}.csv"
+    with open(csv_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=ROW_COLS); w.writeheader()
+        for r in rows: w.writerow({k: r.get(k) for k in ROW_COLS})
+    summary = _summarize(rows)
+    json.dump({**meta, "per_config": summary, "n_runs": len(rows)},
+              open(out_dir / f"{prefix}.json", "w"), indent=2, default=float)
+    return csv_path, summary
+
+
+def _print_summary(summary, title):
+    print(f"\n{title}")
+    print(f"{'dataset':16s} {'feat':9s} {'k':>4s} {'backbone':9s} {'hid':>4s} "
+          f"{'seeds':>5s} {'mAP':>16s} {'F1w':>16s} {'min/run':>8s}")
     for e in summary:
         def f(k):
             mn, sd = e[f'{k}_mean'], e[f'{k}_std']
-            return f"{mn:.4f}+/-{sd:.4f}" if mn is not None else "   n/a   "
+            return f"{mn:.4f}+/-{sd:.4f}" if mn is not None else "     n/a      "
         t = e['train_time_sec_mean']
-        print(f"{str(e['backbone']):10s} {str(e['hidden']):>4s} {e['n_seeds']:>5d} "
+        print(f"{str(e['dataset']):16s} {str(e['feature_group']):9s} {str(e['patch_k']):>4s} "
+              f"{str(e['backbone']):9s} {str(e['hidden']):>4s} {e['n_seeds']:>5d} "
               f"{f('mAP'):>16s} {f('f1_weighted'):>16s} {(t/60 if t else 0):>8.1f}")
+
+
+def cmd_agg(args):
+    """Aggregate ONE cell (grid-root)."""
+    rows = _collect_rows(Path(args.grid_root) / "runs", args.dataset, args.feature_group, args.patch_k)
+    if not rows:
+        sys.exit(f"[agg] no final_results.json under {args.grid_root}/runs")
+    csv_path, summary = _write_tables(
+        rows, args.grid_root, "summary",
+        {"cell": {"dataset": args.dataset, "feature_group": args.feature_group, "patch_k": args.patch_k}})
+    print(f"[agg] {len(rows)} runs -> {csv_path}  (+ summary.json)")
+    _print_summary(summary, f"cell {args.dataset}/{args.feature_group}/k{args.patch_k}")
+
+
+def cmd_agg_study(args):
+    """Master aggregation across ALL cells under a study root.
+
+    Expects cell dirs named <dataset>_<feature>_k<K>/ (as run_study.sh creates them);
+    feature is a single token (geom|enriched), dataset may contain underscores.
+    """
+    study_root = Path(args.study_root)
+    cell_dirs = sorted(d for d in study_root.iterdir() if d.is_dir() and (d / "runs").is_dir())
+    all_rows = []
+    for cd in cell_dirs:
+        name = cd.name
+        if "_k" not in name:
+            continue
+        head, k = name.rsplit("_k", 1)          # head = <dataset>_<feature>
+        dataset, _, feature = head.rpartition("_")
+        rows = _collect_rows(cd / "runs", dataset, feature, k)
+        all_rows.extend(rows)
+        # also refresh the per-cell tables
+        if rows:
+            _write_tables(rows, cd, "summary",
+                          {"cell": {"dataset": dataset, "feature_group": feature, "patch_k": k}})
+    if not all_rows:
+        sys.exit(f"[agg-study] no completed runs under {study_root}")
+    csv_path, summary = _write_tables(all_rows, study_root, "master_summary",
+                                      {"study": str(study_root), "cells": len(cell_dirs)})
+    print(f"[agg-study] {len(all_rows)} runs across {len(cell_dirs)} cells -> {csv_path}")
+    print(f"[agg-study] master table -> {study_root/'master_summary.json'}")
+    _print_summary(summary, "MASTER (mean +/- std over seeds)")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--mode", required=True, choices=["plan", "run", "agg"])
+    ap.add_argument("--mode", required=True, choices=["plan", "check", "run", "agg", "agg-study"])
     ap.add_argument("--dataset", default="shrec19_protein", choices=list(DATASETS))
     ap.add_argument("--feature-group", default="geom", help="geom | enriched")
     ap.add_argument("--patch-k", type=int, default=64)
     ap.add_argument("--data-root", default=os.environ.get("DATA_ROOT", "/home/ogharbi/datasets/SHREC19"),
                     help="dir CONTAINING the graph dirs (Jean-Zay: $WORK)")
     ap.add_argument("--grid-root", default=os.environ.get("GRID_ROOT", "runs/grid"),
-                    help="where run outputs + summary live")
+                    help="where a cell's run outputs + summary live")
+    ap.add_argument("--study-root", default=None,
+                    help="study dir containing many cell dirs (agg-study mode)")
     ap.add_argument("--backbones", nargs="+", default=DEFAULT_BACKBONES)
     ap.add_argument("--hidden-dims", nargs="+", type=int, default=DEFAULT_HIDDEN)
     ap.add_argument("--seeds", nargs="+", type=int, default=DEFAULT_SEEDS)
@@ -288,7 +358,10 @@ def main():
     ap.add_argument("--num-workers", type=int, default=8)
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
-    {"plan": cmd_plan, "run": cmd_run, "agg": cmd_agg}[args.mode](args)
+    if args.mode == "agg-study" and not args.study_root:
+        sys.exit("--study-root is required for --mode agg-study")
+    {"plan": cmd_plan, "check": cmd_check, "run": cmd_run,
+     "agg": cmd_agg, "agg-study": cmd_agg_study}[args.mode](args)
 
 
 if __name__ == "__main__":
