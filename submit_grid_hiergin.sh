@@ -20,8 +20,25 @@ DATASET="${DATASET:-shrec19_protein}"      # shrec19_protein | shrec19_species |
 FEATURE_GROUP="${FEATURE_GROUP:-geom}"     # geom | enriched
 PATCH_K_LIST="${PATCH_K_LIST:-8 16 32 64 128 256}"   # sweep; SHREC25 valid: 8 32 64 128
 
+# STUDY: optional stable study name. When set, each cell's outputs live in a fixed
+# dir runs/<STUDY>/<dataset>_<feature>_k<K>/ (no timestamp), so SEVERAL submissions
+# for the SAME (dataset,feature,patch-k) — e.g. safe backbones on dev + risky on
+# t3 — accumulate into ONE runs/ dir and aggregate together. Unset -> timestamped.
+STUDY="${STUDY:-}"
+
 # ----------------------------- THE GRID AXES -------------------------------
-BACKBONES="${BACKBONES:-gin sage gcn gat gatv2 pna gt gps sgformer msg_gin gvp}"   # 11
+# BACKBONE_SET picks a named group (or override BACKBONES directly):
+#   safe  = < ~2h/run, dev-friendly (local ops + fast gvp)   [8]
+#   risky = global-attention transformers, ~2h+  -> use t3   [3]
+#   all   = everything                                        [11]
+BACKBONE_SET="${BACKBONE_SET:-all}"
+case "$BACKBONE_SET" in
+  safe)  _BB="gin sage gcn gat gatv2 pna msg_gin gvp" ;;
+  risky) _BB="sgformer gt gps" ;;
+  all)   _BB="gin sage gcn gat gatv2 pna msg_gin gvp sgformer gt gps" ;;
+  *) echo "bad BACKBONE_SET=$BACKBONE_SET (use safe|risky|all)"; exit 1 ;;
+esac
+BACKBONES="${BACKBONES:-$_BB}"
 HIDDEN_DIMS="${HIDDEN_DIMS:-128 256 512}"                                           # 3
 SEEDS="${SEEDS:-1 2 3 4 5 6 7 8 9 10}"                                             # 10
 
@@ -39,9 +56,10 @@ CONCURRENCY="${CONCURRENCY:-16}"           # max GPUs to run at once -> set to y
 cd "$PROJECT"
 mkdir -p "$PROJECT/logs"
 
-echo "cell axes : dataset=$DATASET feature=$FEATURE_GROUP"
+echo "cell axes : dataset=$DATASET feature=$FEATURE_GROUP  study=${STUDY:-<timestamped>}"
 echo "patch-k   : $PATCH_K_LIST"
-echo "grid      : backbones=[$BACKBONES] hidden=[$HIDDEN_DIMS] seeds=[$SEEDS]"
+echo "backbones : set=$BACKBONE_SET -> [$BACKBONES]"
+echo "grid      : hidden=[$HIDDEN_DIMS] seeds=[$SEEDS]  qos=$QOS time=$TIME"
 echo "scale     : CONCURRENCY=$CONCURRENCY  (max GPUs at once)"
 echo
 
@@ -57,11 +75,17 @@ for PATCH_K in $PATCH_K_LIST; do
     [ -n "$N" ] || { echo "!! could not determine grid size for patch-k=$PATCH_K"; echo "$PLAN"; exit 1; }
     LAST=$(( N - 1 ))
 
-    STAMP=$(date +%Y%m%d_%H%M%S)
-    GRID_ROOT="$PROJECT/runs/grid_${DATASET}_${FEATURE_GROUP}_k${PATCH_K}_${STAMP}"
+    if [ -n "$STUDY" ]; then
+        # Stable per-cell root: multiple submissions (safe/dev + risky/t3) for the
+        # same (dataset,feature,patch-k) accumulate into ONE runs/ dir -> one agg.
+        GRID_ROOT="$PROJECT/runs/${STUDY}/${DATASET}_${FEATURE_GROUP}_k${PATCH_K}"
+    else
+        STAMP=$(date +%Y%m%d_%H%M%S)
+        GRID_ROOT="$PROJECT/runs/grid_${DATASET}_${FEATURE_GROUP}_k${PATCH_K}_${STAMP}"
+    fi
     mkdir -p "$GRID_ROOT/runs"
     export GRID_ROOT
-    cat > "$GRID_ROOT/CELL.env" <<EOF
+    cat > "$GRID_ROOT/CELL_${BACKBONE_SET}.env" <<EOF
 DATASET=$DATASET
 FEATURE_GROUP=$FEATURE_GROUP
 PATCH_K=$PATCH_K
@@ -78,7 +102,7 @@ EOF
 
     # ---------- grid array (one GPU per task) ----------
     ARRAY_JID=$(sbatch --parsable \
-        --job-name="HGRID_${DATASET}_${FEATURE_GROUP}_k${PATCH_K}" \
+        --job-name="HGRID_${DATASET}_${FEATURE_GROUP}_${BACKBONE_SET}_k${PATCH_K}" \
         --array=0-${LAST}%${CONCURRENCY} \
         --time="$TIME" --account="$ACCOUNT" --constraint="$CONSTRAINT" --qos="$QOS" \
         --cpus-per-task="$CPUS" --gres=gpu:1 --hint=nomultithread \
@@ -89,7 +113,7 @@ EOF
 
     # ---------- aggregate after the whole array (afterany) ----------
     AGG_JID=$(sbatch --parsable \
-        --job-name="HGRID_AGG_k${PATCH_K}" \
+        --job-name="HGRID_AGG_${BACKBONE_SET}_k${PATCH_K}" \
         --dependency=afterany:${ARRAY_JID} \
         --account="$ACCOUNT" --qos=qos_gpu-dev --gres=gpu:1 \
         --constraint="$CONSTRAINT" --cpus-per-task="$CPUS" --hint=nomultithread \
@@ -101,5 +125,17 @@ EOF
 done
 
 echo "watch  : squeue -u \$USER"
-echo "summary per cell: runs/grid_${DATASET}_${FEATURE_GROUP}_k<K>_*/summary.{csv,json}"
-echo "DOWNLOAD few files: scp -r <jz>:$PROJECT/runs/grid_*/summary.json ./"
+if [ -n "$STUDY" ]; then
+  echo "study root : $PROJECT/runs/$STUDY/"
+  echo "per-cell   : runs/$STUDY/${DATASET}_${FEATURE_GROUP}_k<K>/summary.{csv,json}"
+  echo
+  echo "NOTE: with STUDY set, safe+risky submissions share each cell dir. After BOTH"
+  echo "      finish, re-run agg per cell to get the COMBINED table, e.g.:"
+  echo "        for K in $PATCH_K_LIST; do"
+  echo "          python grid_hiergin.py --mode agg --dataset $DATASET \\"
+  echo "            --feature-group $FEATURE_GROUP --patch-k \$K \\"
+  echo "            --grid-root runs/$STUDY/${DATASET}_${FEATURE_GROUP}_k\$K ; done"
+else
+  echo "summary per cell: runs/grid_${DATASET}_${FEATURE_GROUP}_k<K>_*/summary.{csv,json}"
+fi
+echo "DOWNLOAD few files: scp -r <jz>:$PROJECT/runs/ ... /summary.json ./"
