@@ -56,6 +56,10 @@ CONCURRENCY="${CONCURRENCY:-16}"           # max GPUs to run at once -> set to y
 # simultaneous arrays would blow the 32-GPU / 10-job caps. On t3 leave it unset
 # (0) so all patch-k run in parallel.
 SERIALIZE="${SERIALIZE:-0}"
+# NO_AGG=1 : do NOT submit the per-cell aggregation job. On dev every job counts
+# against the ~10-job submit cap, so skip agg here and run it once at the end
+# (grid_hiergin.py --mode agg). Leave 0 on t3.
+NO_AGG="${NO_AGG:-0}"
 # ---------------------------------------------------------------------------
 
 cd "$PROJECT"
@@ -125,15 +129,19 @@ EOF
     PREV_ARRAY="$ARRAY_JID"
 
     # ---------- aggregate after the whole array (afterany) ----------
-    AGG_JID=$(sbatch --parsable \
-        --job-name="HGRID_AGG_${BACKBONE_SET}_k${PATCH_K}" \
-        --dependency=afterany:${ARRAY_JID} \
-        --account="$ACCOUNT" --qos=qos_gpu-dev --gres=gpu:1 \
-        --constraint="$CONSTRAINT" --cpus-per-task="$CPUS" --hint=nomultithread \
-        --time=00:20:00 \
-        --output="$PROJECT/logs/log_%x_%j.out" --error="$PROJECT/logs/log_%x_%j.err" \
-        --wrap="module purge; module load pytorch-gpu/py3/2.8.0; source $WORK/myvenv/bin/activate; cd $PROJECT; python -u grid_hiergin.py --mode agg --dataset $DATASET --feature-group $FEATURE_GROUP --patch-k $PATCH_K --grid-root $GRID_ROOT")
-    echo "  agg   : $AGG_JID (afterany: $ARRAY_JID)"
+    if [ "$NO_AGG" = "1" ]; then
+        echo "  agg   : skipped (NO_AGG=1) — run grid_hiergin.py --mode agg at the end"
+    else
+        AGG_JID=$(sbatch --parsable \
+            --job-name="HGRID_AGG_${BACKBONE_SET}_k${PATCH_K}" \
+            --dependency=afterany:${ARRAY_JID} \
+            --account="$ACCOUNT" --qos=qos_gpu-dev --gres=gpu:1 \
+            --constraint="$CONSTRAINT" --cpus-per-task="$CPUS" --hint=nomultithread \
+            --time=00:20:00 \
+            --output="$PROJECT/logs/log_%x_%j.out" --error="$PROJECT/logs/log_%x_%j.err" \
+            --wrap="module purge; module load pytorch-gpu/py3/2.8.0; source $WORK/myvenv/bin/activate; cd $PROJECT; python -u grid_hiergin.py --mode agg --dataset $DATASET --feature-group $FEATURE_GROUP --patch-k $PATCH_K --grid-root $GRID_ROOT")
+        echo "  agg   : $AGG_JID (afterany: $ARRAY_JID)"
+    fi
     echo
 done
 
