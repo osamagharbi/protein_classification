@@ -51,6 +51,11 @@ QOS="${QOS:-qos_gpu-t3}"                   # t3=<=20h ; use qos_gpu-t4 for very 
 TIME="${TIME:-12:00:00}"
 CPUS="${CPUS:-10}"
 CONCURRENCY="${CONCURRENCY:-16}"           # max GPUs to run at once -> set to your cap
+# SERIALIZE=1 : chain the patch-k cells with SLURM dependencies so only ONE array
+# runs at a time (submit once, they fire back-to-back). Needed on dev, where 6
+# simultaneous arrays would blow the 32-GPU / 10-job caps. On t3 leave it unset
+# (0) so all patch-k run in parallel.
+SERIALIZE="${SERIALIZE:-0}"
 # ---------------------------------------------------------------------------
 
 cd "$PROJECT"
@@ -60,9 +65,10 @@ echo "cell axes : dataset=$DATASET feature=$FEATURE_GROUP  study=${STUDY:-<times
 echo "patch-k   : $PATCH_K_LIST"
 echo "backbones : set=$BACKBONE_SET -> [$BACKBONES]"
 echo "grid      : hidden=[$HIDDEN_DIMS] seeds=[$SEEDS]  qos=$QOS time=$TIME"
-echo "scale     : CONCURRENCY=$CONCURRENCY  (max GPUs at once)"
+echo "scale     : CONCURRENCY=$CONCURRENCY  (max GPUs at once)  serialize=$SERIALIZE"
 echo
 
+PREV_ARRAY=""      # for SERIALIZE: chain each cell after the previous one's array
 for PATCH_K in $PATCH_K_LIST; do
     export DATA_ROOT DATASET FEATURE_GROUP PATCH_K BACKBONES HIDDEN_DIMS SEEDS
 
@@ -101,7 +107,13 @@ EOF
     echo "grid root: $GRID_ROOT"
 
     # ---------- grid array (one GPU per task) ----------
-    ARRAY_JID=$(sbatch --parsable \
+    # SERIALIZE: make this cell's array wait for the previous cell's array, so only
+    # one patch-k runs at a time (keeps dev within its 32-GPU / 10-job caps).
+    DEP_ARG=""
+    if [ "$SERIALIZE" = "1" ] && [ -n "$PREV_ARRAY" ]; then
+        DEP_ARG="--dependency=afterany:${PREV_ARRAY}"
+    fi
+    ARRAY_JID=$(sbatch --parsable $DEP_ARG \
         --job-name="HGRID_${DATASET}_${FEATURE_GROUP}_${BACKBONE_SET}_k${PATCH_K}" \
         --array=0-${LAST}%${CONCURRENCY} \
         --time="$TIME" --account="$ACCOUNT" --constraint="$CONSTRAINT" --qos="$QOS" \
@@ -109,7 +121,8 @@ EOF
         --output="$PROJECT/logs/log_%x_%A_%a.out" \
         --error="$PROJECT/logs/log_%x_%A_%a.err" \
         slurm_grid_hiergin.slurm)
-    echo "  array : $ARRAY_JID"
+    echo "  array : $ARRAY_JID${DEP_ARG:+  ($DEP_ARG)}"
+    PREV_ARRAY="$ARRAY_JID"
 
     # ---------- aggregate after the whole array (afterany) ----------
     AGG_JID=$(sbatch --parsable \
