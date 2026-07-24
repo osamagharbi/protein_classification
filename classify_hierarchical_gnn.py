@@ -606,6 +606,87 @@ class RIConvLayer(nn.Module):
         return {"_m": self.edge_mlp(torch.cat([hi, ri], dim=1))}
 
 
+class GVP(nn.Module):
+    """Geometric Vector Perceptron (Jing et al., ICLR 2021).
+
+    Maps a (scalar, vector) tuple to a new (scalar, vector) tuple while staying
+    rotation-equivariant: scalars are built only from vector *norms* (invariants),
+    output vectors are the input vectors linearly recombined and gated by a scalar
+    sigmoid. Vectors have shape [..., n_vec, 3]; scalars [..., n_scalar].
+    """
+    def __init__(self, in_s, in_v, out_s, out_v, h_v=None):
+        super().__init__()
+        h_v = h_v if h_v is not None else max(in_v, out_v)
+        self.in_v = in_v
+        self.out_v = out_v
+        self.wh = nn.Linear(in_v, h_v, bias=False)        # mix vector channels (equivariant)
+        self.ws = nn.Linear(in_s + h_v, out_s)            # scalars <- [scalars, vec norms]
+        self.wv = nn.Linear(h_v, out_v, bias=False) if out_v > 0 else None
+        self.wg = nn.Linear(out_s, out_v) if out_v > 0 else None  # vector gate from scalars
+
+    def forward(self, s, V):
+        # V: [..., in_v, 3] ; s: [..., in_s]
+        Vh = self.wh(V.transpose(-1, -2)).transpose(-1, -2)       # [..., h_v, 3]
+        vn = torch.norm(Vh, dim=-1)                               # [..., h_v]  (rotation-invariant)
+        s_out = self.ws(torch.cat([s, vn], dim=-1))              # [..., out_s]
+        if self.out_v > 0:
+            Vout = self.wv(Vh.transpose(-1, -2)).transpose(-1, -2)  # [..., out_v, 3]
+            gate = torch.sigmoid(self.wg(s_out)).unsqueeze(-1)       # [..., out_v, 1]
+            Vout = Vout * gate
+        else:
+            Vout = None
+        return F.relu(s_out), Vout
+
+
+class GVPConvLayer(nn.Module):
+    """GVP message-passing layer with the standard scalar-in / scalar-out interface.
+
+    Per directed edge i->j it forms a rotation-invariant scalar part (source hidden
+    state + RBF-expanded distance) and a vector part (the unit edge direction),
+    runs a GVP, sum-aggregates scalars AND vectors into destination nodes, then a
+    node-update GVP returns the output scalars. Vectors are recomputed from geometry
+    each layer (they are not threaded through the scalar pipeline), so the layer
+    drops into the existing HierarchicalGNN unchanged. Equivariant: only relative
+    directions and distances are used, so the returned scalars are SO(3)-invariant.
+
+    Reads xyz from g.ndata['attr'][:, xyz_slice] (0:3 for coords modes, 5:8 for
+    the 8D/14D/16D layouts) — works on any feature mode that carries coordinates.
+    """
+    def __init__(self, in_dim, out_dim, xyz_slice=slice(5, 8), n_rbf=8, vec_dim=4):
+        super().__init__()
+        self.xyz_slice = xyz_slice
+        self.n_rbf = n_rbf
+        # RBF centres over the unit-ball distance range (~[0, 2] after normalisation)
+        centers = torch.linspace(0.0, 2.0, n_rbf)
+        self.register_buffer("rbf_centers", centers)
+        self.rbf_gamma = float((centers[1] - centers[0]) ** 2 + 1e-6)
+        self.msg_gvp = GVP(in_dim + n_rbf, 1, out_dim, vec_dim)
+        self.upd_gvp = GVP(out_dim, vec_dim, out_dim, 0)
+
+    def _rbf(self, dist):
+        return torch.exp(-((dist - self.rbf_centers) ** 2) / self.rbf_gamma)  # [E, n_rbf]
+
+    def _msg(self, edges):
+        pi = edges.src["_pos"]; pj = edges.dst["_pos"]
+        d = pj - pi
+        dist = d.norm(dim=1, keepdim=True).clamp(min=1e-8)
+        u = d / dist                                        # [E, 3] unit direction
+        s_in = torch.cat([edges.src["_h"], self._rbf(dist)], dim=1)
+        V_in = u.unsqueeze(1)                               # [E, 1, 3]
+        s_m, V_m = self.msg_gvp(s_in, V_in)                 # [E, out], [E, vec, 3]
+        return {"_ms": s_m, "_mv": V_m}
+
+    def forward(self, g: dgl.DGLGraph, h: torch.Tensor) -> torch.Tensor:
+        with g.local_scope():
+            g.ndata["_pos"] = g.ndata["attr"][:, self.xyz_slice]
+            g.ndata["_h"] = h
+            g.apply_edges(self._msg)
+            g.update_all(dgl_fn.copy_e("_ms", "m"), dgl_fn.sum("m", "_sagg"))
+            g.update_all(dgl_fn.copy_e("_mv", "m"), dgl_fn.sum("m", "_vagg"))
+            s_upd, _ = self.upd_gvp(g.ndata["_sagg"], g.ndata["_vagg"])
+            return s_upd
+
+
 def make_conv(backbone, in_dim, out_dim, pna_delta=6.0, xyz_slice=slice(5, 8)):
     if backbone == "gin":
         return GINConv(gin_mlp(in_dim, out_dim), "sum", learn_eps=True)
@@ -615,6 +696,8 @@ def make_conv(backbone, in_dim, out_dim, pna_delta=6.0, xyz_slice=slice(5, 8)):
         return MSGINLayer(in_dim, out_dim, xyz_slice=xyz_slice)
     elif backbone == "ri_gin":
         return RIConvLayer(in_dim, out_dim)
+    elif backbone == "gvp":
+        return GVPConvLayer(in_dim, out_dim, xyz_slice=xyz_slice)
     elif backbone == "sage":
         return SAGEConv(in_dim, out_dim, aggregator_type="mean")
     elif backbone == "gcn":
@@ -973,7 +1056,7 @@ def main():
                          "and drowns the patch path). Kept only for reproducibility of that negative result.")
     ap.add_argument("--node-backbone",
                     choices=["gin", "sage", "gcn", "gat", "gatv2", "pna", "gt", "gps", "sgformer",
-                             "ri_gin", "lrf_gin", "msg_gin"],
+                             "ri_gin", "lrf_gin", "msg_gin", "gvp"],
                     default="gin", help="GNN backbone for the node-level encoder. "
                     "lrf_gin: uses precomputed 8D LRF edge features (requires ssl_graphs_1k_geom_enriched_ri). "
                     "msg_gin: multi-scale kNN-6/16/32 aggregation (built on-the-fly from xyz).")

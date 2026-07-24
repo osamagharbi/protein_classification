@@ -87,11 +87,12 @@ DATASETS = {
     },
 }
 
-# 10 dataset-agnostic node backbones (exclude ri_gin/lrf_gin: they need RI edge
-# features that SHREC19 graphs do not carry). patch-backbone stays gin throughout.
-DEFAULT_BACKBONES = ["gin", "sage", "gcn", "gat", "gatv2", "pna", "gt", "gps", "sgformer", "msg_gin"]
+# 11 dataset-agnostic node backbones (exclude ri_gin/lrf_gin: they need RI edge
+# features that SHREC19 graphs do not carry). gvp = equivariant GVP conv reading
+# xyz from the feature slice. patch-backbone stays gin throughout.
+DEFAULT_BACKBONES = ["gin", "sage", "gcn", "gat", "gatv2", "pna", "gt", "gps", "sgformer", "msg_gin", "gvp"]
 DEFAULT_HIDDEN    = [128, 256, 512]
-DEFAULT_SEEDS     = [1, 2, 3]
+DEFAULT_SEEDS     = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 # Fixed headline recipe (everything the grid does NOT vary). Mirrors the SHREC19
 # winning config: 3 node layers, 2 patch layers, attn pool, max readout, inverse-sqrt
