@@ -78,11 +78,18 @@ DATASETS = {
     # SHREC25 (99 classes). Splits live inside the graph dir (auto-detected).
     # enriched uses geom_14d_raw (14D = 8D base + 6 geom); labels reused from base.
     "shrec25": {
+        # ssl_graphs_1k_geom_enriched_ri is a strict superset of both
+        # ssl_graphs_1k (plain, x=8D) and ssl_graphs_1k_geom_enriched (x=21D =
+        # 8D base + 13D geom_features): verified byte-identical on the shared
+        # columns (x, pos, geom_features_*, edge_index). It additionally
+        # carries ri_feat/ri_lrf_feat (unused by "coords"/"geom_14d_raw"), and
+        # it is the only one of the three actually deployed on Jean-Zay, so
+        # both feature groups point at it -- no duplicate upload needed.
         "assign_tmpl": "ssl_graphs_1k_patchassign_k{k}",
         "labels": {"train": None, "test": None},  # internal auto-detect for base dir
         "features": {
-            "geom":     {"graph_subdir": "ssl_graphs_1k",              "feature_mode": "coords",       "labels_from": "ssl_graphs_1k"},
-            "enriched": {"graph_subdir": "ssl_graphs_1k_geom_enriched", "feature_mode": "geom_14d_raw", "labels_from": "ssl_graphs_1k"},
+            "geom":     {"graph_subdir": "ssl_graphs_1k_geom_enriched_ri", "feature_mode": "coords",       "labels_from": "ssl_graphs_1k_geom_enriched_ri"},
+            "enriched": {"graph_subdir": "ssl_graphs_1k_geom_enriched_ri", "feature_mode": "geom_14d_raw", "labels_from": "ssl_graphs_1k_geom_enriched_ri"},
         },
     },
 }
