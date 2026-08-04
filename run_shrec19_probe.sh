@@ -49,10 +49,19 @@ CONSTRAINT="${CONSTRAINT:-v100-32g}"
 QOS="${QOS:-qos_gpu-dev}"          # inference only -> cheap, dev QOS is fine
 TIME="${TIME:-00:30:00}"
 CPUS="${CPUS:-6}"
-CONCURRENCY="${CONCURRENCY:-20}"   # dev partition has far fewer nodes than t3
 DATA_ROOT="${DATA_ROOT:-$WORK}"
 PROJECT="${PROJECT:-$WORK/protein_classification}"
 DRY_RUN="${DRY_RUN:-0}"
+# qos_gpu-dev counts each ARRAY TASK ELEMENT (not each sbatch call) against a
+# ~10-job submit cap (QOSMaxSubmitJobPerUserLimit) -- confirmed by hitting it
+# directly on this study. So on dev we drip-feed: submit small batches and
+# poll squeue, keeping running+pending tasks <= MAX_INFLIGHT at all times,
+# mirroring this repo's earlier dev_dripfeed.sh. Run this script itself in
+# tmux/screen/nohup -- it's a light poll loop that stays alive until every
+# batch is submitted (no compute, safe on a login node).
+BATCH="${BATCH:-10}"
+MAX_INFLIGHT="${MAX_INFLIGHT:-10}"
+POLL="${POLL:-30}"
 # ---------------------------------------------------------------------------
 
 cd "$PROJECT"
@@ -112,7 +121,8 @@ cat <<BANNER
  orig checkpoints (species) : $ORIG_ROOT_SPECIES   [$SPECIES_SEEDS]
  corrected data   : $DATA_ROOT
  total tasks      : $N   (inference only, one checkpoint each)
- concurrency      : $CONCURRENCY   qos: $QOS   time/task cap: $TIME
+ drip-feed        : batches of $BATCH, MAX_INFLIGHT=$MAX_INFLIGHT, poll=${POLL}s
+ qos              : $QOS   time/task cap: $TIME
  manifest         : $MANIFEST
  results          : $OUT_ROOT/<tag>.json  ->  aggregated by agg_probe.py
 ===========================================================================
@@ -138,27 +148,52 @@ if [ "$DRY_RUN" = "1" ]; then
   echo; echo "DRY_RUN=1 -> nothing submitted. Unset DRY_RUN to launch."; exit 0
 fi
 
-# ------------------------------- submit array -------------------------------
+# --------------------------- drip-feed submit -------------------------------
+JOB_NAME="PROBE_${PROBE_NAME}"
 export MANIFEST OUT_ROOT
-JID=$(sbatch --parsable \
-    --job-name="PROBE_${PROBE_NAME}" \
-    --array=0-${LAST}%${CONCURRENCY} \
-    --time="$TIME" --account="$ACCOUNT" --constraint="$CONSTRAINT" --qos="$QOS" \
-    --cpus-per-task="$CPUS" --gres=gpu:1 --hint=nomultithread \
-    --output="$PROJECT/logs/log_%x_%A_%a.out" \
-    --error="$PROJECT/logs/log_%x_%A_%a.err" \
-    slurm_probe_hiergin.slurm)
 
+# running+pending task COUNT for this probe's job name (array tasks expanded)
+inflight() { squeue -u "$USER" -r -h -t RUNNING,PENDING -o "%j" 2>/dev/null | grep -c "^${JOB_NAME}\$"; }
+
+ALL_JIDS=()
+OFFSET=0
+BATCH_NUM=0
+TOTAL_BATCHES=$(( (N + BATCH - 1) / BATCH ))
+while [ "$OFFSET" -lt "$N" ]; do
+  BATCH_NUM=$((BATCH_NUM + 1))
+  SIZE=$(( N - OFFSET < BATCH ? N - OFFSET : BATCH ))
+  BLAST=$(( SIZE - 1 ))
+
+  while [ "$(inflight)" -gt "$(( MAX_INFLIGHT - SIZE ))" ]; do
+    sleep "$POLL"
+  done
+
+  JID=$(sbatch --parsable \
+      --job-name="$JOB_NAME" \
+      --array=0-${BLAST}%${SIZE} \
+      --export=ALL,MANIFEST_OFFSET=$OFFSET \
+      --time="$TIME" --account="$ACCOUNT" --constraint="$CONSTRAINT" --qos="$QOS" \
+      --cpus-per-task="$CPUS" --gres=gpu:1 --hint=nomultithread \
+      --output="$PROJECT/logs/log_%x_%A_%a.out" \
+      --error="$PROJECT/logs/log_%x_%A_%a.err" \
+      slurm_probe_hiergin.slurm)
+  ALL_JIDS+=("$JID")
+  echo "[$BATCH_NUM/$TOTAL_BATCHES] submitted batch $JID  rows [$OFFSET, $((OFFSET+SIZE)) )  (inflight was $(inflight))"
+  OFFSET=$((OFFSET + SIZE))
+  sleep 2
+done
+
+DEP=$(IFS=:; echo "${ALL_JIDS[*]}")
 AGG_JID=$(sbatch --parsable \
     --job-name="PROBE_AGG" \
-    --dependency=afterany:${JID} \
+    --dependency=afterany:${DEP} \
     --account="$ACCOUNT" --qos="$QOS" \
     --cpus-per-task=4 --hint=nomultithread --time=00:10:00 \
     --output="$PROJECT/logs/log_%x_%j.out" --error="$PROJECT/logs/log_%x_%j.err" \
     --wrap="module purge; module load pytorch-gpu/py3/2.8.0; source $WORK/myvenv/bin/activate; cd $PROJECT; python -u agg_probe.py --out-root $OUT_ROOT --csv $PROBE_ROOT/master_summary_corrected_test.csv")
 
 echo
-echo "submitted array $JID ($N tasks) + agg job $AGG_JID (afterany)."
+echo "submitted $BATCH_NUM batches ($N tasks total) + agg job $AGG_JID (afterany all batches)."
 echo "watch  : squeue -u \$USER"
 echo "results: $PROBE_ROOT/master_summary_corrected_test.csv  (orig vs corrected vs delta per config)"
 echo "re-agg anytime: python agg_probe.py --out-root $OUT_ROOT --csv $PROBE_ROOT/master_summary_corrected_test.csv"

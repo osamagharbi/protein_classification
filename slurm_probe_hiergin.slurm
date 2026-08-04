@@ -17,8 +17,10 @@
 # test_labels_csv) row from MANIFEST.tsv.
 #
 # Required env (exported by run_shrec19_probe.sh):
-#   MANIFEST   path to the manifest.tsv (columns: tag orig_run_dir graph_dir assign_dir test_labels_csv)
-#   OUT_ROOT   where to write each task's final_results_corrected_test.json
+#   MANIFEST         path to the manifest.tsv (columns: tag orig_run_dir graph_dir assign_dir test_labels_csv)
+#   OUT_ROOT         where to write each task's final_results_corrected_test.json
+#   MANIFEST_OFFSET  row offset for this batch (drip-feed: batch N covers
+#                     manifest rows [OFFSET, OFFSET+array_size)); default 0.
 #
 set -euo pipefail
 set -x
@@ -33,8 +35,9 @@ PROJECT="$WORK/protein_classification"
 cd "$PROJECT"
 mkdir -p "$PROJECT/logs"
 
-# task-id is 0-based; manifest row 1 is the header
-LINE=$(( SLURM_ARRAY_TASK_ID + 2 ))
+# task-id is 0-based; manifest row 1 is the header; MANIFEST_OFFSET shifts
+# into the right slice of the manifest for this drip-feed batch.
+LINE=$(( SLURM_ARRAY_TASK_ID + ${MANIFEST_OFFSET:-0} + 2 ))
 ROW=$(sed -n "${LINE}p" "$MANIFEST")
 [ -z "$ROW" ] && { echo "[probe] no manifest row at line $LINE"; exit 1; }
 
