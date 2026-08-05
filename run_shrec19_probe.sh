@@ -111,6 +111,25 @@ print(g, a, te)
   done
 done
 
+# resume support: skip rows whose result already exists (e.g. a prior
+# drip-feed died partway through -- don't waste GPU time redoing finished work)
+MANIFEST_FULL="$MANIFEST"
+MANIFEST_TODO="$PROBE_ROOT/MANIFEST_TODO.tsv"
+head -1 "$MANIFEST_FULL" > "$MANIFEST_TODO"
+SKIPPED=0
+tail -n +2 "$MANIFEST_FULL" | while IFS=$'\t' read -r TAG REST; do
+  if [ -f "$OUT_ROOT/${TAG}.json" ]; then
+    echo "skip" >> "$PROBE_ROOT/.skipped_count"
+  else
+    printf '%s\t%s\n' "$TAG" "$REST" >> "$MANIFEST_TODO"
+  fi
+done
+if [ -f "$PROBE_ROOT/.skipped_count" ]; then
+  SKIPPED=$(wc -l < "$PROBE_ROOT/.skipped_count")
+  rm -f "$PROBE_ROOT/.skipped_count"
+fi
+MANIFEST="$MANIFEST_TODO"
+
 N=$(( $(wc -l < "$MANIFEST") - 1 ))
 LAST=$(( N - 1 ))
 
@@ -120,16 +139,23 @@ cat <<BANNER
  orig checkpoints (protein) : $ORIG_ROOT_PROTEIN   [$PROTEIN_SEEDS]
  orig checkpoints (species) : $ORIG_ROOT_SPECIES   [$SPECIES_SEEDS]
  corrected data   : $DATA_ROOT
- total tasks      : $N   (inference only, one checkpoint each)
+ already done     : $SKIPPED   (skipped -- result json already present)
+ remaining tasks  : $N   (inference only, one checkpoint each)
  drip-feed        : batches of $BATCH, MAX_INFLIGHT=$MAX_INFLIGHT, poll=${POLL}s
  qos              : $QOS   time/task cap: $TIME
- manifest         : $MANIFEST
+ manifest         : $MANIFEST  (todo subset of $MANIFEST_FULL)
  results          : $OUT_ROOT/<tag>.json  ->  aggregated by agg_probe.py
 ===========================================================================
 BANNER
 
+if [ "$N" -eq 0 ]; then
+  echo "[probe] nothing left to do -- all results already present. Aggregating now."
+  python3 agg_probe.py --out-root "$OUT_ROOT" --csv "$PROBE_ROOT/master_summary_corrected_test.csv"
+  exit 0
+fi
+
 # ------------------------- preflight: every checkpoint present -------------
-echo "[preflight] checking all $N original checkpoints exist ..."
+echo "[preflight] checking all $N remaining original checkpoints exist ..."
 MISSING=0
 tail -n +2 "$MANIFEST" | while IFS=$'\t' read -r TAG RUN_DIR GRAPH_DIR ASSIGN_DIR TEST_CSV; do
   if [ ! -f "$RUN_DIR/best_model.pt" ] || [ ! -f "$RUN_DIR/final_results.json" ]; then
@@ -152,8 +178,11 @@ fi
 JOB_NAME="PROBE_${PROBE_NAME}"
 export MANIFEST OUT_ROOT
 
-# running+pending task COUNT for this probe's job name (array tasks expanded)
-inflight() { squeue -u "$USER" -r -h -t RUNNING,PENDING -o "%j" 2>/dev/null | grep -c "^${JOB_NAME}\$"; }
+# running+pending task COUNT for this probe's job name (array tasks expanded).
+# "|| true" matters under `set -o pipefail`: grep -c exits 1 on zero matches
+# (a perfectly normal case -- e.g. right after a batch finishes), which would
+# otherwise make this function's own exit status 1.
+inflight() { squeue -u "$USER" -r -h -t RUNNING,PENDING -o "%j" 2>/dev/null | grep -c "^${JOB_NAME}\$" || true; }
 
 ALL_JIDS=()
 OFFSET=0
@@ -168,7 +197,7 @@ while [ "$OFFSET" -lt "$N" ]; do
     sleep "$POLL"
   done
 
-  JID=$(sbatch --parsable \
+  if ! JID=$(sbatch --parsable \
       --job-name="$JOB_NAME" \
       --array=0-${BLAST}%${SIZE} \
       --export=ALL,MANIFEST_OFFSET=$OFFSET \
@@ -176,7 +205,11 @@ while [ "$OFFSET" -lt "$N" ]; do
       --cpus-per-task="$CPUS" --gres=gpu:1 --hint=nomultithread \
       --output="$PROJECT/logs/log_%x_%A_%a.out" \
       --error="$PROJECT/logs/log_%x_%A_%a.err" \
-      slurm_probe_hiergin.slurm)
+      slurm_probe_hiergin.slurm); then
+    echo "!! sbatch FAILED for batch $BATCH_NUM (offset=$OFFSET, size=$SIZE). Stopping here so it can be inspected."
+    echo "!! already-submitted batches are unaffected; re-run this script later to resume from where it left off (already-completed results are skipped automatically)."
+    exit 1
+  fi
   ALL_JIDS+=("$JID")
   echo "[$BATCH_NUM/$TOTAL_BATCHES] submitted batch $JID  rows [$OFFSET, $((OFFSET+SIZE)) )  (inflight was $(inflight))"
   OFFSET=$((OFFSET + SIZE))
