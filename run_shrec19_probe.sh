@@ -217,10 +217,13 @@ while [ "$OFFSET" -lt "$N" ]; do
 done
 
 DEP=$(IFS=:; echo "${ALL_JIDS[*]}")
+# agg_probe.py is pure stdlib (no torch/GPU needed) but the acu@v100 account
+# only accepts GPU-type jobs (IDRIS rejects CPU-only jobs under it) -- keep
+# --gres=gpu:1 purely to satisfy that account/job-type requirement.
 AGG_JID=$(sbatch --parsable \
     --job-name="PROBE_AGG" \
     --dependency=afterany:${DEP} \
-    --account="$ACCOUNT" --qos="$QOS" \
+    --account="$ACCOUNT" --qos="$QOS" --gres=gpu:1 --constraint="$CONSTRAINT" \
     --cpus-per-task=4 --hint=nomultithread --time=00:10:00 \
     --output="$PROJECT/logs/log_%x_%j.out" --error="$PROJECT/logs/log_%x_%j.err" \
     --wrap="module purge; module load pytorch-gpu/py3/2.8.0; source $WORK/myvenv/bin/activate; cd $PROJECT; python -u agg_probe.py --out-root $OUT_ROOT --csv $PROBE_ROOT/master_summary_corrected_test.csv")
