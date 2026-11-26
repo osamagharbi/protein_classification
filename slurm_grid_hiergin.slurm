@@ -57,6 +57,7 @@ srun python -u grid_hiergin.py \
   --backbones     $BACKBONES \
   --hidden-dims   $HIDDEN_DIMS \
   --seeds         $SEEDS \
+  --arch          "${ARCH:-hier}" \
   --device        0 \
   --num-workers   "${SLURM_CPUS_PER_TASK}"
 

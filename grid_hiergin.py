@@ -112,6 +112,12 @@ FIXED = dict(
 )
 
 
+# Architecture variants for the no-hierarchy ablation. "hier" is the paper
+# model; "flatN" drops patch pooling + the patch GNN (--flat) and reads out over
+# all nodes with N node layers (flat5 matches hier's depth and parameter count).
+ARCHS = {"hier": None, "flat3": 3, "flat5": 5}
+
+
 def resolve_paths(data_root: str, dataset: str, feature_group: str, patch_k: int):
     """Return concrete (graph_dir, assign_dir, train_csv, test_csv, feature_mode)."""
     if dataset not in DATASETS:
@@ -142,8 +148,9 @@ def build_grid(backbones, hidden_dims, seeds):
     return list(itertools.product(backbones, hidden_dims, seeds))
 
 
-def run_tag(dataset, feature_group, patch_k, backbone, hidden, seed):
-    return f"{dataset}_{feature_group}_k{patch_k}_{backbone}_h{hidden}_s{seed}"
+def run_tag(dataset, feature_group, patch_k, backbone, hidden, seed, arch="hier"):
+    arch_tag = "" if arch == "hier" else f"{arch}_"
+    return f"{dataset}_{feature_group}_k{patch_k}_{arch_tag}{backbone}_h{hidden}_s{seed}"
 
 
 # ----------------------------------------------------------------------------
@@ -162,7 +169,7 @@ def cmd_plan(args):
     print(f"GRID_SIZE={len(grid)}")
     if args.verbose:
         for i, (bb, h, s) in enumerate(grid):
-            print(f"  [{i:3d}] {run_tag(args.dataset, args.feature_group, args.patch_k, bb, h, s)}")
+            print(f"  [{i:3d}] {run_tag(args.dataset, args.feature_group, args.patch_k, bb, h, s, args.arch)}")
 
 
 def cmd_check(args):
@@ -197,7 +204,7 @@ def cmd_run(args):
         if c is not None and not os.path.isfile(c):
             sys.exit(f"[preflight] missing label CSV: {c}")
 
-    tag = run_tag(args.dataset, args.feature_group, args.patch_k, backbone, hidden, seed)
+    tag = run_tag(args.dataset, args.feature_group, args.patch_k, backbone, hidden, seed, args.arch)
     out_dir = Path(args.grid_root) / "runs"
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -214,7 +221,11 @@ def cmd_run(args):
            "--run-name", tag]
     if tr: cmd += ["--train-labels-csv", tr]
     if te: cmd += ["--test-labels-csv", te]
-    for k, v in FIXED.items():
+    fixed = dict(FIXED)
+    if ARCHS[args.arch] is not None:
+        fixed["node_layers"] = ARCHS[args.arch]
+        cmd += ["--flat"]
+    for k, v in fixed.items():
         flag = "--" + k.replace("_", "-")
         cmd += [flag, str(v)]
 
@@ -243,7 +254,8 @@ def _collect_rows(runs_dir, dataset, feature_group, patch_k):
         rows.append({
             "tag": fr.parent.name, "dataset": dataset, "feature_group": feature_group,
             "patch_k": patch_k if patch_k is not None else c.get("assign_dir", "").split("_k")[-1],
-            "backbone": c.get("node_backbone"), "hidden": c.get("hidden_dim"),
+            "backbone": c.get("node_backbone") + (f"+flat{c.get('node_layers')}" if c.get("flat") else ""),
+            "hidden": c.get("hidden_dim"),
             "seed": c.get("seed"), "in_dim": c.get("in_dim"), "num_classes": c.get("num_classes"),
             "n_params": d.get("n_params"), "n_params_trainable": d.get("n_params_trainable"),
             "epochs_run": d.get("epochs_run"), "best_epoch": d.get("best_epoch"),
@@ -360,6 +372,8 @@ def main():
     ap.add_argument("--backbones", nargs="+", default=DEFAULT_BACKBONES)
     ap.add_argument("--hidden-dims", nargs="+", type=int, default=DEFAULT_HIDDEN)
     ap.add_argument("--seeds", nargs="+", type=int, default=DEFAULT_SEEDS)
+    ap.add_argument("--arch", default=os.environ.get("ARCH", "hier"), choices=list(ARCHS),
+                    help="hier (paper model) | flat3 | flat5 (no-hierarchy ablation)")
     ap.add_argument("--task-id", type=int, default=-1, help="grid index (run mode)")
     ap.add_argument("--device", type=int, default=0)
     ap.add_argument("--num-workers", type=int, default=8)

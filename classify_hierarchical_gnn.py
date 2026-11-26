@@ -75,10 +75,16 @@ class HierPatchDataset(Dataset):
 
     def __init__(self, graph_dir, assign_dir, split, label_dict, ssl_emb_dir=None,
                  feature_mode="all", rwpe_dim: int = 0,
-                 use_lrf_feat: bool = False, assign_dir2=None):
+                 use_lrf_feat: bool = False, assign_dir2=None,
+                 use_bidirectional_edges: bool = False):
         self.gdir = resolve_split_dir(graph_dir, split)
         self.adir = resolve_split_dir(assign_dir, split)
         self.use_lrf_feat = use_lrf_feat
+        # The legacy SHREC19/25 graphs use edge_index_mesh by default.  The
+        # OFF converter also stores a genuinely bidirectional edge_index, but
+        # we select it only when explicitly requested so existing protocols
+        # remain unchanged.
+        self.use_bidirectional_edges = use_bidirectional_edges
         self.adir2 = resolve_split_dir(assign_dir2, split) if assign_dir2 else None
         self.label_dict = label_dict
         self.feature_mode = feature_mode
@@ -116,7 +122,10 @@ class HierPatchDataset(Dataset):
         d = torch.load(gp, map_location="cpu", weights_only=False)
         a = torch.load(ap, map_location="cpu", weights_only=False)
 
-        ei = d.get("edge_index_mesh", d.get("edge_index"))
+        if self.use_bidirectional_edges:
+            ei = d.get("edge_index", d.get("edge_index_mesh"))
+        else:
+            ei = d.get("edge_index_mesh", d.get("edge_index"))
 
         if self._ssl_index:
             ssl_path = self._ssl_index.get(gp.stem)
@@ -124,6 +133,12 @@ class HierPatchDataset(Dataset):
                 raise FileNotFoundError(f"No SSL embedding for {gp.stem!r}")
             sd = torch.load(ssl_path, map_location="cpu", weights_only=False)
             x = sd["ssl_emb"].float()
+        elif self.feature_mode == "hks":
+            # Intrinsic heat-kernel signatures produced by prepare_off_hierarchy.py.
+            x = d["hks"].float()
+        elif self.feature_mode == "coords_hks":
+            # Intrinsic HKS plus XYZ for a controlled hybrid experiment.
+            x = torch.cat([d["pos"].float(), d["hks"].float()], dim=1)
         elif self.feature_mode == "coords":
             # x_ssl, y_ssl, z_ssl — normalized coordinates only (3-dim)
             x = d["pos"].float()
@@ -219,13 +234,77 @@ class HierPatchDataset(Dataset):
         return g_node, g_patch, label
 
 
-def _random_so3():
-    """Sample a uniformly random 3×3 rotation matrix via QR decomposition."""
-    Q, R = torch.linalg.qr(torch.randn(3, 3))
+def _random_so3(generator=None):
+    """Sample a uniformly random 3×3 rotation matrix via QR decomposition.
+    `generator` (optional torch.Generator) makes the draw reproducible."""
+    Q, R = torch.linalg.qr(torch.randn(3, 3, generator=generator))
     Q = Q * torch.sign(torch.diag(R))  # ensure det = +1
     if torch.det(Q) < 0:
         Q[:, 0] = -Q[:, 0]
     return Q
+
+
+# Per feature mode: (xyz slice, normal slice or None, indices of channels that are
+# already rotation-invariant scalars). Used by --invariant (which feeds only the
+# invariant channels to the node encoder; xyz and normals enter HiPatchNet only as
+# relative geometry / GVP vectors) and by the rotation test (which rotates the xyz
+# and normal channels). Potentials and the geom_14d* descriptors (distances to the
+# centroid and to FPS anchors, surface variation) are invariant scalars.
+FEATURE_LAYOUT = {
+    "coords":           (slice(0, 3), None,         []),
+    "coords_potential": (slice(0, 3), None,         [3]),
+    "coords_normals":   (slice(0, 3), slice(3, 6),  []),
+    "geom_14d":         (slice(5, 8), slice(2, 5),  [0, 1, 8, 9, 10, 11, 12, 13]),
+    "geom_14d_raw":     (slice(5, 8), slice(2, 5),  [0, 1, 8, 9, 10, 11, 12, 13]),
+}
+
+
+def rotate_attr(g, feature_mode, R):
+    """Rotate the xyz (and normal) channels of g.ndata['attr'] by R, in place."""
+    xyz_sl, nor_sl, _ = FEATURE_LAYOUT[feature_mode]
+    attr = g.ndata["attr"].clone()
+    attr[:, xyz_sl] = attr[:, xyz_sl] @ R.T
+    if nor_sl is not None:
+        attr[:, nor_sl] = attr[:, nor_sl] @ R.T
+    g.ndata["attr"] = attr
+    return g
+
+
+class RotatedView(Dataset):
+    """Deterministic random SO(3) rotation of every test graph (rotation test).
+
+    The rotation of item `idx` depends only on (seed, idx), so the result is the
+    same for any number of DataLoader workers. Patch assignments are untouched:
+    they are built from FPS seeds and geodesic distances, which do not change
+    under a rigid rotation, so rotating the features is equivalent to rotating
+    the surface."""
+
+    def __init__(self, base, feature_mode, seed):
+        if feature_mode not in FEATURE_LAYOUT:
+            raise ValueError(f"rotation test not supported for feature mode {feature_mode!r}")
+        self.base, self.feature_mode, self.seed = base, feature_mode, int(seed)
+
+    def __len__(self):
+        return len(self.base)
+
+    def __getitem__(self, idx):
+        item = self.base[idx]
+        gen = torch.Generator().manual_seed(self.seed * 1_000_003 + int(idx))
+        rotate_attr(item[0], self.feature_mode, _random_so3(gen))
+        return item
+
+
+def present_class_metrics(labs, preds):
+    """Macro metrics over the classes that occur in `labs` only (the convention
+    used in the papers). compute_metrics() averages over the full class list,
+    which counts every class absent from the test set as 0."""
+    from sklearn.metrics import f1_score, recall_score
+    present = sorted(set(int(v) for v in labs))
+    return {
+        "f1_macro_present": float(f1_score(labs, preds, labels=present, average="macro", zero_division=0)),
+        "balanced_accuracy_present": float(recall_score(labs, preds, labels=present, average="macro", zero_division=0)),
+        "n_classes_present": len(present),
+    }
 
 
 _FEATURE_MODE_AUG_INDICES = {
@@ -296,6 +375,49 @@ def collate(batch):
     bp = dgl.batch(gpatches)
     y = torch.stack(labels)
     return bn, bp, global_pid, y
+
+
+class MultiScalePatchDataset(HierPatchDataset):
+    """Same graphs, several patch resolutions at once (multi-scale model).
+
+    assign_dirs[0] plays the role of the usual --assign-dir; every further dir
+    adds one resolution. Item = (g_node, [g_patch_s for each scale], label), with
+    the node->patch ids of scale s stored in g_node.ndata[f"pid{s}"]."""
+
+    def __init__(self, graph_dir, assign_dirs, split, label_dict, **kw):
+        super().__init__(graph_dir, assign_dirs[0], split, label_dict, **kw)
+        self.extra_adirs = [resolve_split_dir(a, split) for a in assign_dirs[1:]]
+        keep = [it for it in self.items
+                if all((ad / it[1].name).exists() for ad in self.extra_adirs)]
+        if len(keep) != len(self.items):
+            print(f"  [{split}] multi-scale: dropped {len(self.items) - len(keep)} graphs "
+                  f"missing a patch sidecar at some resolution")
+        self.items = keep
+
+    def __getitem__(self, idx):
+        g_node, g_patch, label = super().__getitem__(idx)
+        g_node.ndata["pid0"] = g_node.ndata["pid"]
+        patches = [g_patch]
+        gp_name = self.items[idx][1].name
+        for s, ad in enumerate(self.extra_adirs, start=1):
+            a = torch.load(ad / gp_name, map_location="cpu", weights_only=False)
+            g_node.ndata[f"pid{s}"] = a["patch_ids"].long()
+            pei = a["patch_edge_index"]
+            gp = dgl.graph((pei[0], pei[1]), num_nodes=int(a["num_patches"]))
+            patches.append(gp.remove_self_loop().add_self_loop())
+        return g_node, patches, label
+
+
+def collate_multi(batch):
+    """Collate for MultiScalePatchDataset -> (bn, [bp_s], [gpid_s], y)."""
+    gnodes, patch_lists, labels = zip(*batch)
+    bps, gpids = [], []
+    for s in range(len(patch_lists[0])):
+        gps = [pl[s] for pl in patch_lists]
+        offsets = np.cumsum([0] + [gp.num_nodes() for gp in gps[:-1]])
+        gpids.append(torch.cat([gn.ndata[f"pid{s}"] + int(o) for gn, o in zip(gnodes, offsets)]))
+        bps.append(dgl.batch(gps))
+    return dgl.batch(gnodes), bps, gpids, torch.stack(labels)
 
 
 def collate_three(batch):
@@ -652,15 +774,21 @@ class GVPConvLayer(nn.Module):
     Reads xyz from g.ndata['attr'][:, xyz_slice] (0:3 for coords modes, 5:8 for
     the 8D/14D/16D layouts) — works on any feature mode that carries coordinates.
     """
-    def __init__(self, in_dim, out_dim, xyz_slice=slice(5, 8), n_rbf=8, vec_dim=4):
+    def __init__(self, in_dim, out_dim, xyz_slice=slice(5, 8), n_rbf=8, vec_dim=4,
+                 nor_slice=None):
         super().__init__()
         self.xyz_slice = xyz_slice
+        # nor_slice (opt-in, used by --invariant): surface normals of both edge
+        # endpoints enter the message GVP as two extra *vector* channels, so the
+        # layer uses normal information while staying exactly rotation-invariant.
+        # Default None keeps the original layer (and checkpoint shapes) unchanged.
+        self.nor_slice = nor_slice
         self.n_rbf = n_rbf
         # RBF centres over the unit-ball distance range (~[0, 2] after normalisation)
         centers = torch.linspace(0.0, 2.0, n_rbf)
         self.register_buffer("rbf_centers", centers)
         self.rbf_gamma = float((centers[1] - centers[0]) ** 2 + 1e-6)
-        self.msg_gvp = GVP(in_dim + n_rbf, 1, out_dim, vec_dim)
+        self.msg_gvp = GVP(in_dim + n_rbf, 1 if nor_slice is None else 3, out_dim, vec_dim)
         self.upd_gvp = GVP(out_dim, vec_dim, out_dim, 0)
 
     def _rbf(self, dist):
@@ -672,13 +800,18 @@ class GVPConvLayer(nn.Module):
         dist = d.norm(dim=1, keepdim=True).clamp(min=1e-8)
         u = d / dist                                        # [E, 3] unit direction
         s_in = torch.cat([edges.src["_h"], self._rbf(dist)], dim=1)
-        V_in = u.unsqueeze(1)                               # [E, 1, 3]
+        if self.nor_slice is None:
+            V_in = u.unsqueeze(1)                           # [E, 1, 3]
+        else:
+            V_in = torch.stack([u, edges.src["_nor"], edges.dst["_nor"]], dim=1)  # [E, 3, 3]
         s_m, V_m = self.msg_gvp(s_in, V_in)                 # [E, out], [E, vec, 3]
         return {"_ms": s_m, "_mv": V_m}
 
     def forward(self, g: dgl.DGLGraph, h: torch.Tensor) -> torch.Tensor:
         with g.local_scope():
             g.ndata["_pos"] = g.ndata["attr"][:, self.xyz_slice]
+            if self.nor_slice is not None:
+                g.ndata["_nor"] = g.ndata["attr"][:, self.nor_slice]
             g.ndata["_h"] = h
             g.apply_edges(self._msg)
             g.update_all(dgl_fn.copy_e("_ms", "m"), dgl_fn.sum("m", "_sagg"))
@@ -687,7 +820,8 @@ class GVPConvLayer(nn.Module):
             return s_upd
 
 
-def make_conv(backbone, in_dim, out_dim, pna_delta=6.0, xyz_slice=slice(5, 8)):
+def make_conv(backbone, in_dim, out_dim, pna_delta=6.0,
+              xyz_slice=slice(5, 8), nor_slice=slice(2, 5), gvp_nor_slice=None):
     if backbone == "gin":
         return GINConv(gin_mlp(in_dim, out_dim), "sum", learn_eps=True)
     elif backbone == "lrf_gin":
@@ -695,9 +829,9 @@ def make_conv(backbone, in_dim, out_dim, pna_delta=6.0, xyz_slice=slice(5, 8)):
     elif backbone == "msg_gin":
         return MSGINLayer(in_dim, out_dim, xyz_slice=xyz_slice)
     elif backbone == "ri_gin":
-        return RIConvLayer(in_dim, out_dim)
+        return RIConvLayer(in_dim, out_dim, xyz_slice=xyz_slice, nor_slice=nor_slice)
     elif backbone == "gvp":
-        return GVPConvLayer(in_dim, out_dim, xyz_slice=xyz_slice)
+        return GVPConvLayer(in_dim, out_dim, xyz_slice=xyz_slice, nor_slice=gvp_nor_slice)
     elif backbone == "sage":
         return SAGEConv(in_dim, out_dim, aggregator_type="mean")
     elif backbone == "gcn":
@@ -723,8 +857,24 @@ class HierarchicalGNN(nn.Module):
                  node_readout=False, node_backbone="gin", patch_backbone="gin",
                  pna_delta=6.0, scalar_inject=False, patch_scalar_inject=False,
                  patch_inject_all=False, three_level=False, mid_layers=2,
-                 xyz_slice=slice(5, 8), proj_dim=128):
+                 xyz_slice=slice(5, 8), proj_dim=128,
+                 nor_slice=slice(2, 5), flat=False,
+                 invariant=False, inv_idx=None, gvp_normals=False):
         super().__init__()
+        # flat=True is the no-hierarchy ablation: node GNN -> graph readout over
+        # all nodes -> head. No patch pooling and no patch GNN are built.
+        self.flat = flat
+        # invariant=True (HiPatchNet, exactly rotation-invariant): the node encoder
+        # receives only the rotation-invariant channels inv_idx plus the distance of
+        # each node to the surface centre; xyz (and normals, if gvp_normals) reach
+        # the GVP layers only as relative geometry / vectors. `in_dim` must then be
+        # len(inv_idx) + 1. Default False leaves the model exactly as before.
+        self.invariant = invariant
+        self.inv_idx = list(inv_idx or [])
+        self.xyz_slice = xyz_slice
+        gvp_nor = nor_slice if gvp_normals else None
+        if flat:
+            patch_layers = 0
         self.pool = pool
         self.readout = readout
         self.node_readout = node_readout
@@ -740,7 +890,8 @@ class HierarchicalGNN(nn.Module):
         self.node_norms = nn.ModuleList()
         d = in_dim
         for _ in range(node_layers):
-            self.node_convs.append(make_conv(node_backbone, d, hidden_dim, pna_delta, xyz_slice))
+            self.node_convs.append(make_conv(node_backbone, d, hidden_dim, pna_delta,
+                                             xyz_slice, nor_slice, gvp_nor))
             self.node_norms.append(nn.LayerNorm(hidden_dim))
             d = hidden_dim
         # when node_layers=0, project raw features to hidden_dim for pooling
@@ -752,11 +903,12 @@ class HierarchicalGNN(nn.Module):
         ) if scalar_inject else nn.ModuleList()
 
         # learned attention scorer for attention pooling
-        self.attn_pool = nn.Linear(hidden_dim, 1) if pool == "attn" else None
+        self.attn_pool = nn.Linear(hidden_dim, 1) if pool == "attn" and not flat else None
 
         # projection after node->patch pooling (meanmax doubles width)
         pooled_dim = hidden_dim * (2 if pool == "meanmax" else 1)
-        self.pool_proj = nn.Linear(pooled_dim, hidden_dim) if pooled_dim != hidden_dim else nn.Identity()
+        self.pool_proj = (nn.Linear(pooled_dim, hidden_dim)
+                          if pooled_dim != hidden_dim and not flat else nn.Identity())
 
         # Option 3: three-level hierarchy — intermediate (mid) pooling stage
         if three_level:
@@ -832,7 +984,15 @@ class HierarchicalGNN(nn.Module):
             return mx
         return torch.cat([mean, mx], dim=1)
 
-    def forward(self, bn, bp, gpid, bm=None, mid_gpid=None, return_proj=False, return_embedding=False):
+    def node_input(self, attr):
+        """Features fed to the first node layer (all channels unless invariant)."""
+        if not self.invariant:
+            return attr
+        radial = attr[:, self.xyz_slice].norm(dim=1, keepdim=True)   # distance to centre
+        return torch.cat([attr[:, self.inv_idx], radial], dim=1) if self.inv_idx else radial
+
+    def forward(self, bn, bp, gpid, bm=None, mid_gpid=None, return_proj=False, return_embedding=False,
+                return_patch=False):
         """Forward pass.
 
         Standard mode: forward(bn, bp, gpid)
@@ -845,8 +1005,10 @@ class HierarchicalGNN(nn.Module):
           representation `hg` (used for retrieval/similarity, e.g. SHREC21) --
           default False preserves the original return signature for every
           existing caller (SHREC19/25 training and eval are unaffected).
+        return_patch: when True, return (logits, ph) where ph holds the final
+          patch embeddings (input of the graph readout), for patch attribution.
         """
-        h = bn.ndata["attr"]
+        h = self.node_input(bn.ndata["attr"])
         # cache the 2 scalar channels (Potential_norm, NormalPotential_norm) at
         # input resolution for re-injection between node layers
         scalars = h[:, :2].clamp(-5.0, 5.0) if self.scalar_inject else None
@@ -868,8 +1030,12 @@ class HierarchicalGNN(nn.Module):
                         # reason about electrostatics at its own resolution
                         h = self.scalar_projs[i](torch.cat([h, scalars], dim=1))
 
+        if self.flat:
+            # no-hierarchy ablation: read out directly over node embeddings
+            P = 0
+            ph = h
         # Three-level path: pool nodes → mid-patches → final-patches
-        if self.three_level and bm is not None:
+        elif self.three_level and bm is not None:
             M = bm.num_nodes()
             mh = self._scatter(h, mid_gpid, M)
             mh = self.mid_pool_proj(mh)
@@ -920,18 +1086,20 @@ class HierarchicalGNN(nn.Module):
                 if self.patch_inject_all or self.patch_scalar_inject:
                     ph = self.patch_scalar_projs[i](torch.cat([ph, patch_feats], dim=1))
 
-        with bp.local_scope():
-            bp.ndata["h"] = ph
+        # graph-level readout over patch super-nodes (or over nodes when flat)
+        g_out = bn if self.flat else bp
+        with g_out.local_scope():
+            g_out.ndata["h"] = ph
             if self.readout == "attn":
                 # attention-weighted sum over patches within each graph
                 scores = self.readout_attn(ph).squeeze(-1)  # [total_patches]
                 # softmax within each graph using batch node counts
-                batch_nids = torch.zeros(bp.num_nodes(), dtype=torch.long, device=ph.device)
+                batch_nids = torch.zeros(g_out.num_nodes(), dtype=torch.long, device=ph.device)
                 offset = 0
-                for i, n in enumerate(bp.batch_num_nodes()):
+                for i, n in enumerate(g_out.batch_num_nodes()):
                     batch_nids[offset:offset + n] = i
                     offset += n
-                B = bp.batch_size
+                B = g_out.batch_size
                 patch_max = torch.full((B,), float("-inf"), device=ph.device)
                 patch_max = patch_max.scatter_reduce(0, batch_nids, scores, reduce="amax", include_self=True)
                 scores = scores - patch_max[batch_nids]
@@ -940,9 +1108,9 @@ class HierarchicalGNN(nn.Module):
                 w = w / denom[batch_nids].clamp(min=1e-8)
                 hg = torch.zeros(B, ph.shape[1], device=ph.device).index_add_(0, batch_nids, ph * w.unsqueeze(1))
             elif self.readout == "max":
-                hg = dgl.max_nodes(bp, "h")
+                hg = dgl.max_nodes(g_out, "h")
             else:
-                hg = dgl.mean_nodes(bp, "h")
+                hg = dgl.mean_nodes(g_out, "h")
 
         # skip connection: pool node embeddings directly so the fine-mesh signal
         # reaches the classifier without going through the 32-patch bottleneck
@@ -950,6 +1118,8 @@ class HierarchicalGNN(nn.Module):
             with bn.local_scope():
                 bn.ndata["h"] = h
                 hg = torch.cat([hg, dgl.mean_nodes(bn, "h"), dgl.max_nodes(bn, "h")], dim=1)
+        if return_patch:
+            return self.head(hg), ph
         if return_proj and return_embedding:
             return self.head(hg), F.normalize(self.proj_head(hg), dim=-1), hg
         if return_proj:
@@ -957,6 +1127,112 @@ class HierarchicalGNN(nn.Module):
         if return_embedding:
             return self.head(hg), hg
         return self.head(hg)
+
+
+def attn_pool_scatter(h, gpid, P, scorer):
+    """Attention pooling of node embeddings h into P patches (softmax per patch)."""
+    scores = scorer(h).squeeze(-1)
+    pmax = torch.full((P,), float("-inf"), device=h.device, dtype=h.dtype)
+    pmax = pmax.scatter_reduce(0, gpid, scores, reduce="amax", include_self=True)
+    w = (scores - pmax[gpid]).exp()
+    denom = torch.zeros(P, device=h.device, dtype=h.dtype).index_add_(0, gpid, w)
+    w = w / denom[gpid].clamp(min=1e-8)
+    return torch.zeros(P, h.shape[1], device=h.device, dtype=h.dtype).index_add_(
+        0, gpid, h * w.unsqueeze(1))
+
+
+class MultiScaleHierGNN(nn.Module):
+    """HSNet/N2P with several patch resolutions on one shared node encoder.
+
+    node encoder (shared) -> for each scale s: attention pooling into k_s patches
+    -> patch GNN -> global max readout -> fuse the S graph vectors -> head.
+
+    fusion:  "gate"   learned per-graph softmax weights over scales (weights are
+                      returned by forward(..., return_gates=True) for analysis)
+             "concat" concatenate the S vectors and project back to hidden_dim
+             "mean"   plain average
+    share_patch_gnn: one patch GNN for all scales, so the model has nearly the
+                     parameter count of the single-scale model (param-matched arm).
+    """
+
+    def __init__(self, in_dim, hidden_dim, num_classes, n_scales, node_layers=3,
+                 patch_layers=2, dropout=0.3, node_backbone="gvp", patch_backbone="gin",
+                 pna_delta=6.0, xyz_slice=slice(5, 8), nor_slice=slice(2, 5),
+                 invariant=False, inv_idx=None, gvp_normals=False,
+                 fusion="gate", share_patch_gnn=False):
+        super().__init__()
+        self.n_scales, self.fusion, self.share = n_scales, fusion, share_patch_gnn
+        self.invariant, self.inv_idx, self.xyz_slice = invariant, list(inv_idx or []), xyz_slice
+        gvp_nor = nor_slice if gvp_normals else None
+        self.node_convs, self.node_norms = nn.ModuleList(), nn.ModuleList()
+        d = in_dim
+        for _ in range(node_layers):
+            self.node_convs.append(make_conv(node_backbone, d, hidden_dim, pna_delta,
+                                             xyz_slice, nor_slice, gvp_nor))
+            self.node_norms.append(nn.LayerNorm(hidden_dim))
+            d = hidden_dim
+        self.attn_pools = nn.ModuleList([nn.Linear(hidden_dim, 1) for _ in range(n_scales)])
+        n_gnn = 1 if share_patch_gnn else n_scales
+        self.patch_convs = nn.ModuleList([
+            nn.ModuleList([make_conv(patch_backbone, hidden_dim, hidden_dim, pna_delta)
+                           for _ in range(patch_layers)]) for _ in range(n_gnn)])
+        self.patch_norms = nn.ModuleList([
+            nn.ModuleList([nn.LayerNorm(hidden_dim) for _ in range(patch_layers)])
+            for _ in range(n_gnn)])
+        if fusion == "gate":
+            self.gate = nn.Sequential(nn.Linear(hidden_dim, hidden_dim // 2), nn.Tanh(),
+                                      nn.Linear(hidden_dim // 2, 1))
+        elif fusion == "concat":
+            self.fuse = nn.Linear(n_scales * hidden_dim, hidden_dim)
+        elif fusion != "mean":
+            raise ValueError(f"unknown fusion {fusion!r}")
+        self.dropout = nn.Dropout(dropout)
+        self.head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2), nn.ReLU(),
+            nn.Dropout(dropout), nn.Linear(hidden_dim // 2, num_classes))
+
+    node_input = HierarchicalGNN.node_input
+
+    def forward(self, bn, bps, gpids, return_gates=False, return_patch=False, **_):
+        h = self.node_input(bn.ndata["attr"])
+        n = len(self.node_convs)
+        for i, (conv, norm) in enumerate(zip(self.node_convs, self.node_norms)):
+            h_in = h
+            h = norm(conv(bn, h))
+            if h_in.shape[-1] == h.shape[-1]:
+                h = h + h_in
+            if i < n - 1:
+                h = self.dropout(F.elu(h))
+        graph_vecs, patch_embs = [], []
+        for s in range(self.n_scales):
+            bp, gpid = bps[s], gpids[s]
+            ph = attn_pool_scatter(h, gpid, bp.num_nodes(), self.attn_pools[s])
+            convs = self.patch_convs[0 if self.share else s]
+            norms = self.patch_norms[0 if self.share else s]
+            for i, (conv, norm) in enumerate(zip(convs, norms)):
+                ph_in = ph
+                ph = norm(conv(bp, ph)) + ph_in
+                if i < len(convs) - 1:
+                    ph = self.dropout(F.elu(ph))
+            patch_embs.append(ph)
+            with bp.local_scope():
+                bp.ndata["h"] = ph
+                graph_vecs.append(dgl.max_nodes(bp, "h"))
+        H = torch.stack(graph_vecs, dim=1)                       # [B, S, hidden]
+        gates = None
+        if self.fusion == "gate":
+            gates = torch.softmax(self.gate(H).squeeze(-1), dim=1)  # [B, S]
+            hg = (gates.unsqueeze(-1) * H).sum(dim=1)
+        elif self.fusion == "concat":
+            hg = self.fuse(H.flatten(1))
+        else:
+            hg = H.mean(dim=1)
+        logits = self.head(hg)
+        if return_patch:
+            return logits, patch_embs, gates
+        if return_gates:
+            return logits, gates
+        return logits
 
 
 # --------------------------------------------------------------------------- #
@@ -988,7 +1264,12 @@ def run_epoch(model, loader, criterion, device, optimizer=None, num_classes=None
     use_supcon = supcon_weight > 0
     with ctx:
         for batch in tqdm(loader, desc=desc, leave=False):
-            if len(batch) == 6:  # three-level: (bn, bm, bp, mid_gpid, gpid, y)
+            if isinstance(batch[1], list):  # multi-scale: (bn, [bp_s], [gpid_s], y)
+                bn, bps, gpids, y = batch
+                bn = bn.to(device); y = y.to(device)
+                bps = [b.to(device) for b in bps]; gpids = [g.to(device) for g in gpids]
+                out = model(bn, bps, gpids)
+            elif len(batch) == 6:  # three-level: (bn, bm, bp, mid_gpid, gpid, y)
                 bn, bm, bp, mid_gpid, gpid, y = batch
                 bn = bn.to(device); bm = bm.to(device); bp = bp.to(device)
                 mid_gpid = mid_gpid.to(device); gpid = gpid.to(device); y = y.to(device)
@@ -1035,6 +1316,55 @@ def compute_map(labs, scores, num_classes):
         return float("nan")
 
 
+def xyz_nor_slices(feature_mode):
+    """xyz / normal slices of the node feature vector (as used in main())."""
+    xyz = slice(0, 3) if feature_mode in ("coords", "coords_normals", "coords_potential") else slice(5, 8)
+    nor = slice(3, 6) if feature_mode == "coords_normals" else slice(2, 5)
+    return xyz, nor
+
+
+def build_model(cfg, raw_in_dim, num_classes):
+    """Build the model described by a run config (argparse namespace or the
+    `config` dict of final_results.json). Used by main() and by the analysis
+    scripts, so a checkpoint is always rebuilt exactly as it was trained.
+    Keys missing from old configs fall back to the behaviour of the old code."""
+    get = (lambda k, d=None: cfg.get(k, d)) if isinstance(cfg, dict) else (lambda k, d=None: getattr(cfg, k, d))
+    fmode = get("feature_mode", "all")
+    xyz_sl, nor_sl = xyz_nor_slices(fmode)
+    invariant = bool(get("invariant", False))
+    inv_idx, gvp_normals, in_dim = None, False, raw_in_dim
+    if invariant:
+        if fmode not in FEATURE_LAYOUT:
+            raise ValueError(f"--invariant needs a feature mode in {list(FEATURE_LAYOUT)}, got {fmode!r}")
+        if get("node_backbone") != "gvp":
+            raise ValueError("--invariant is defined for the GVP-inspired (HiPatchNet) node encoder only")
+        _, layout_nor, inv_idx = FEATURE_LAYOUT[fmode]
+        gvp_normals = get("gvp_normals")
+        gvp_normals = (layout_nor is not None) if gvp_normals is None else bool(gvp_normals)
+        if gvp_normals and layout_nor is None:
+            raise ValueError(f"--gvp-normals: feature mode {fmode!r} has no normals")
+        in_dim = len(inv_idx) + 1
+    common = dict(node_layers=get("node_layers", 6), patch_layers=get("patch_layers", 2),
+                  dropout=get("dropout", 0.3), node_backbone=get("node_backbone", "gin"),
+                  patch_backbone=get("patch_backbone", "gin"), pna_delta=get("pna_delta") or 6.0,
+                  xyz_slice=xyz_sl, nor_slice=nor_sl, invariant=invariant, inv_idx=inv_idx,
+                  gvp_normals=gvp_normals)
+    if get("multi_assign_dirs"):
+        return MultiScaleHierGNN(in_dim, get("hidden_dim", 512), num_classes,
+                                 n_scales=len(get("multi_assign_dirs")),
+                                 fusion=get("fusion", "gate"),
+                                 share_patch_gnn=bool(get("share_patch_gnn", False)), **common)
+    return HierarchicalGNN(in_dim, get("hidden_dim", 512), num_classes,
+                           pool=get("pool", "meanmax"), readout=get("readout", "max"),
+                           node_readout=bool(get("node_readout", False)),
+                           scalar_inject=bool(get("scalar_inject", False)),
+                           patch_scalar_inject=bool(get("patch_scalar_inject", False)),
+                           patch_inject_all=bool(get("patch_inject_all", False)),
+                           three_level=get("assign_dir2") is not None,
+                           mid_layers=get("mid_layers", 2), proj_dim=get("proj_dim", 128),
+                           flat=bool(get("flat", False)), **common)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--graph-dir", default="/home/ogharbi/datasets/SHREC25/ssl_graphs_1k")
@@ -1054,6 +1384,10 @@ def main():
                          "as a fix for the patch bottleneck; controlled run (hier_skip_clean) showed "
                          "it CUTS test macro-F1 from 0.22 to 0.045 (it shortcuts to majority classes "
                          "and drowns the patch path). Kept only for reproducibility of that negative result.")
+    ap.add_argument("--flat", action="store_true", default=False,
+                    help="No-hierarchy ablation: skip patch pooling and the patch GNN; the "
+                         "--readout is applied over all node embeddings. Data, splits, loss "
+                         "and head are unchanged, so the patch stage is the only difference.")
     ap.add_argument("--node-backbone",
                     choices=["gin", "sage", "gcn", "gat", "gatv2", "pna", "gt", "gps", "sgformer",
                              "ri_gin", "lrf_gin", "msg_gin", "gvp"],
@@ -1065,9 +1399,10 @@ def main():
                     default="gin", help="GNN backbone for the patch-level encoder")
     ap.add_argument("--pna-delta", type=float, default=None,
                     help="PNA avg in-degree (auto-computed from data if not set)")
-    ap.add_argument("--feature-mode", choices=["all", "coords", "coords_potential", "coords_normals", "all_no_normpot", "all_no_pot", "geom_14d", "geom_14d_raw"],
+    ap.add_argument("--feature-mode", choices=["all", "coords", "hks", "coords_hks", "coords_potential", "coords_normals", "all_no_normpot", "all_no_pot", "geom_14d", "geom_14d_raw"],
                     default="all",
                     help="all=8 features (default); coords=xyz only (3-dim, pos field); "
+                         "hks=16D intrinsic heat-kernel signature; coords_hks=xyz+HKS; "
                          "coords_normals=xyz+normals (6-dim); "
                          "geom_14d=14D (8D base + dist_centroid/anchors + surf_variation, requires geom-enriched graph-dir)")
     ap.add_argument("--rwpe-dim", type=int, default=0,
@@ -1123,7 +1458,11 @@ def main():
                     help="Linear LR warmup epochs (used with --lr-schedule cosine)")
     ap.add_argument("--assign-dir2", default=None,
                     help="Option 3 — three-level hierarchy: intermediate patch assignment dir "
-                    "(e.g. ssl_graphs_1k_patchassign_k128). --assign-dir becomes the FINAL level.")
+                         "(e.g. ssl_graphs_1k_patchassign_k128). --assign-dir becomes the FINAL level.")
+    ap.add_argument("--use-bidirectional-edges", action="store_true",
+                    help="Use edge_index when available. Intended for the OFF-derived "
+                         "TOSCA/SHREC11 graphs; disabled by default to preserve the "
+                         "legacy SHREC19/SHREC25 protocol.")
     ap.add_argument("--mid-layers", type=int, default=2,
                     help="GIN layers in the intermediate (mid) pooling stage (three-level only).")
     ap.add_argument("--topk-classes", type=int, default=None)
@@ -1132,7 +1471,33 @@ def main():
     ap.add_argument("--val-split", type=float, default=0.2)
     ap.add_argument("--run-name", default=None)
     ap.add_argument("--output-dir", default="runs")
+    # ---- future-work options (all off by default: old runs are unchanged) ----
+    ap.add_argument("--invariant", action="store_true", default=False,
+                    help="Exactly rotation-invariant HiPatchNet: the node encoder gets only the "
+                         "invariant channels (+ distance to centre); xyz/normals enter only as "
+                         "relative geometry / GVP vectors. Requires --node-backbone gvp.")
+    ap.add_argument("--gvp-normals", action=argparse.BooleanOptionalAction, default=None,
+                    help="With --invariant: feed surface normals to the GVP messages as vectors "
+                         "(default: on when the feature mode has normals).")
+    ap.add_argument("--test-rotations", type=int, default=0,
+                    help="After training, also evaluate the test set under N fixed random SO(3) "
+                         "rotations (rotation test); results in final_results['rotation_test'].")
+    ap.add_argument("--multi-assign-dirs", nargs="+", default=None,
+                    help="Multi-scale model: one patch-assignment dir per resolution "
+                         "(e.g. ..._k16 ..._k64 ..._k256). Replaces --assign-dir.")
+    ap.add_argument("--fusion", choices=["gate", "concat", "mean"], default="gate",
+                    help="Multi-scale fusion of the per-resolution graph vectors.")
+    ap.add_argument("--share-patch-gnn", action="store_true", default=False,
+                    help="Multi-scale: one patch GNN shared by all resolutions (param-matched).")
     args = ap.parse_args()
+    multi = args.multi_assign_dirs is not None
+    if multi:
+        bad = [f for f, on in (("--assign-dir2", args.assign_dir2 is not None), ("--flat", args.flat),
+                               ("--augment", args.augment), ("--supcon-weight", args.supcon_weight > 0),
+                               ("--ssl-emb-dir", args.ssl_emb_dir is not None)) if on]
+        if bad:
+            ap.error(f"--multi-assign-dirs cannot be combined with {bad}")
+        args.assign_dir = args.multi_assign_dirs[0]
 
     torch.manual_seed(args.seed); np.random.seed(args.seed)
     device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() else "cpu")
@@ -1163,16 +1528,23 @@ def main():
     use_lrf = (args.node_backbone == "lrf_gin")
     three_level = (args.assign_dir2 is not None)
     _ds_kw = dict(ssl_emb_dir=args.ssl_emb_dir, feature_mode=args.feature_mode,
-                  rwpe_dim=args.rwpe_dim, use_lrf_feat=use_lrf, assign_dir2=args.assign_dir2)
-    _col = collate_three if three_level else collate
+                  rwpe_dim=args.rwpe_dim, use_lrf_feat=use_lrf, assign_dir2=args.assign_dir2,
+                  use_bidirectional_edges=args.use_bidirectional_edges)
+    _col = collate_multi if multi else (collate_three if three_level else collate)
+    if multi:
+        def make_ds(split, labels):
+            return MultiScalePatchDataset(args.graph_dir, args.multi_assign_dirs, split, labels, **_ds_kw)
+    else:
+        def make_ds(split, labels):
+            return HierPatchDataset(args.graph_dir, args.assign_dir, split, labels, **_ds_kw)
 
-    full_train = HierPatchDataset(args.graph_dir, args.assign_dir, "train", train_labels, **_ds_kw)
-    test_ds = HierPatchDataset(args.graph_dir, args.assign_dir, "test", test_labels, **_ds_kw)
+    full_train = make_ds("train", train_labels)
+    test_ds = make_ds("test", test_labels)
 
     if args.val_labels_csv:
         val_labels, _ = load_labels(args.graph_dir, "train", args.val_labels_csv)
         train_ds = full_train
-        val_ds = HierPatchDataset(args.graph_dir, args.assign_dir, "train", val_labels, **_ds_kw)
+        val_ds = make_ds("train", val_labels)
         num_classes = len(set(train_labels.values()) | set(val_labels.values()))
     else:
         tr_idx, va_idx = create_robust_train_val_split(full_train, train_labels,
@@ -1180,6 +1552,16 @@ def main():
         train_ds, val_ds = Subset(full_train, tr_idx), Subset(full_train, va_idx)
 
     print(f"train={len(train_ds)} val={len(val_ds)} test={len(test_ds)} classes={num_classes}")
+
+    # record the exact split ids so paired runs (e.g. hier vs --flat) can be
+    # checked to have trained, early-stopped and been tested on identical data
+    def _split_ids(ds):
+        base = ds.dataset if isinstance(ds, Subset) else ds
+        idx = ds.indices if isinstance(ds, Subset) else range(len(ds))
+        return [str(base.items[i][0]) for i in idx]
+    with open(run_dir / "split_ids.json", "w") as f:
+        json.dump({"train": _split_ids(train_ds), "val": _split_ids(val_ds),
+                   "test": _split_ids(test_ds)}, f)
 
     # DataLoader overhead-only tuning (numerically neutral — identical batches/order):
     # keep workers alive across epochs instead of re-spawning them every epoch, and
@@ -1235,24 +1617,15 @@ def main():
                                  # exact trained model instead of silently
                                  # falling back to the class default (6.0).
 
-    # xyz_slice: dims of xyz in the node feature vector (for msg_gin and ri_gin)
-    _xyz_sl = slice(5, 8)  # default for all/geom_14d_raw; coords_normals uses 0:3
-    if args.feature_mode in ("coords", "coords_normals", "coords_potential"):
-        _xyz_sl = slice(0, 3)
-
-    model = HierarchicalGNN(in_dim, args.hidden_dim, num_classes, args.node_layers,
-                            args.patch_layers, args.pool, args.readout, args.dropout,
-                            node_readout=args.node_readout,
-                            node_backbone=args.node_backbone,
-                            patch_backbone=args.patch_backbone,
-                            pna_delta=pna_delta,
-                            scalar_inject=args.scalar_inject,
-                            patch_scalar_inject=args.patch_scalar_inject,
-                            patch_inject_all=args.patch_inject_all,
-                            three_level=three_level,
-                            mid_layers=args.mid_layers,
-                            xyz_slice=_xyz_sl,
-                            proj_dim=args.proj_dim).to(device)
+    # xyz / normal slices are resolved inside build_model (xyz_nor_slices); the
+    # construction is shared with the analysis scripts so checkpoints round-trip.
+    try:
+        model = build_model(args, in_dim, num_classes).to(device)
+    except ValueError as e:
+        ap.error(str(e))
+    if args.invariant:
+        print(f"  invariant HiPatchNet: node input = channels {FEATURE_LAYOUT[args.feature_mode][2]} "
+              f"+ distance to centre; GVP normals={model.node_convs[0].nor_slice is not None}")
     n_params = int(sum(p.numel() for p in model.parameters()))
     n_params_trainable = int(sum(p.numel() for p in model.parameters() if p.requires_grad))
     print(f"in_dim={in_dim} | node_backbone={args.node_backbone} | patch_backbone={args.patch_backbone}"
@@ -1325,10 +1698,33 @@ def main():
     test_m, test_labs, test_scores = run_epoch(model, test_loader, criterion, device, None,
                                                num_classes, "test", collect_scores=True)
     test_m["mAP"] = compute_map(test_labs, test_scores, num_classes)
+    test_m.update(present_class_metrics(test_labs, test_scores.argmax(1)))
     print("\n=== FINAL TEST (best val model) ===")
     for k in ["accuracy", "balanced_accuracy", "f1_macro", "f1_weighted",
-              "tpr_macro", "tnr_macro", "mAP"]:
+              "tpr_macro", "tnr_macro", "mAP", "f1_macro_present", "balanced_accuracy_present"]:
         print(f"  {k:18s}: {test_m[k]:.4f}")
+
+    # rotation test: same test set, every graph under a fixed random rotation
+    rotation_test = None
+    if args.test_rotations > 0:
+        per_rot = []
+        for r in range(args.test_rotations):
+            rot_loader = DataLoader(RotatedView(test_ds, args.feature_mode, seed=1000 + r),
+                                    batch_size=args.batch_size, shuffle=False,
+                                    num_workers=args.num_workers, collate_fn=_col)
+            rm, rl, rs = run_epoch(model, rot_loader, criterion, device, None, num_classes,
+                                   f"rot{r}", collect_scores=True)
+            rm["mAP"] = compute_map(rl, rs, num_classes)
+            rm.update(present_class_metrics(rl, rs.argmax(1)))
+            per_rot.append(rm)
+            print(f"  rotation {r}: acc {rm['accuracy']:.4f}  f1w {rm['f1_weighted']:.4f}  "
+                  f"f1m(present) {rm['f1_macro_present']:.4f}")
+        keys = ["accuracy", "f1_weighted", "f1_macro_present", "balanced_accuracy_present", "mAP"]
+        rotation_test = {"n_rotations": args.test_rotations, "per_rotation": per_rot,
+                         "mean": {k: float(np.mean([m[k] for m in per_rot])) for k in keys},
+                         "std": {k: float(np.std([m[k] for m in per_rot])) for k in keys}}
+        print(f"  rotated test (mean of {args.test_rotations}): "
+              f"acc {rotation_test['mean']['accuracy']:.4f}  f1w {rotation_test['mean']['f1_weighted']:.4f}")
     print(f"\n[timing] params={n_params:,} | trainable={n_params_trainable:,} | "
           f"epochs_run={epochs_run} | best_epoch={best_epoch} | "
           f"train_time_sec={train_time_sec:.1f} ({train_time_sec/60:.1f} min) | "
@@ -1338,6 +1734,7 @@ def main():
     cfg_out["in_dim"] = in_dim
     cfg_out["num_classes"] = num_classes
     json.dump({"final_test_metrics": test_m, "config": cfg_out,
+               "rotation_test": rotation_test,
                "best_val_f1": best_val_f1,
                "n_params": n_params, "n_params_trainable": n_params_trainable,
                "epochs_run": epochs_run, "best_epoch": best_epoch,

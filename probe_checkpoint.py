@@ -57,6 +57,7 @@ def build_model_from_cfg(cfg: dict, device) -> nn.Module:
         mid_layers=cfg["mid_layers"],
         xyz_slice=xyz_slice,
         proj_dim=cfg["proj_dim"],
+        flat=cfg.get("flat", False),
     ).to(device)
     return model
 
