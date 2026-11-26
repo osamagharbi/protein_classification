@@ -20,10 +20,11 @@ for d in proteins species; do
 done
 for k in 8 32 128; do need "ssl_graphs_shared_proteinsplit_patchassign_k$k" "analysis (patch-count sweep)"; done
 echo "SHREC2025"
-need ssl_graphs_1k_geom_enriched_ri "rotation, multiscale25, analysis"
-need ssl_graphs_1k_geom_enriched_ri/train_split.csv "SHREC2025 labels (paper release)"
-need ssl_graphs_1k_patchassign_k64 "rotation, multiscale25, analysis"
-for k in 16 256; do need "ssl_graphs_1k_patchassign_k$k" "multiscale25 only" "sbatch jeanzay/build_patchassign.slurm"; done
+H25="sbatch jeanzay/build_shrec25_graphs.slurm (rebuilds them from the original archives)"
+need ssl_graphs_1k_geom_enriched_ri "rotation, multiscale25, analysis" "$H25"
+need ssl_graphs_1k_geom_enriched_ri/train_split.csv "SHREC2025 labels (paper release)" "$H25"
+need ssl_graphs_1k_patchassign_k64 "rotation, multiscale25, analysis" "$H25"
+for k in 16 256; do need "ssl_graphs_1k_patchassign_k$k" "multiscale25 only" "$H25"; done
 echo "repository label sets"
 for f in shrec25_final/train_split.csv shrec25_final/val_split.csv shrec25_final/test_labels.csv \
          shrec25_update_281025/test_labels.csv; do need "$PROJECT/data_labels/$f" "FINAL release / re-scoring"; done

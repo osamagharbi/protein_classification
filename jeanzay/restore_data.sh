@@ -83,7 +83,11 @@ echo "SHREC2025"
 restore ssl_graphs_1k_geom_enriched_ri "$MIN25"
 restore ssl_graphs_1k_patchassign_k64 "$MIN25"
 for k in 8 32 128; do restore ssl_graphs_1k_patchassign_k$k "$MIN25" "(only if SHREC2025 checkpoints use k=$k)"; done
-for k in 16 256; do restore ssl_graphs_1k_patchassign_k$k "$MIN25" "(built by: sbatch jeanzay/build_patchassign.slurm)"; done
+for k in 16 256; do restore ssl_graphs_1k_patchassign_k$k "$MIN25" "(built by: sbatch jeanzay/build_shrec25_graphs.slurm)"; done
+case " ${missing[*]:-} " in *" ssl_graphs_1k_"*)
+  echo "  -> rebuild the paper's SHREC2025 graphs + patch files from the original archives (CPU, prepost):"
+  echo "       mkdir -p logs/fw && sbatch jeanzay/build_shrec25_graphs.slurm" ;;
+esac
 
 echo
 if [ ${#missing[@]} -eq 0 ]; then

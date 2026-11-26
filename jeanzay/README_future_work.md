@@ -27,6 +27,34 @@ About `restore_data.sh`:
 - **Scratch purge:** `$SCRATCH` deletes files not accessed for 30 days. If that happens, rerun the script; the archives stay in `$WORK`.
 - **Missing data:** a dataset it cannot find is reported as `MISSING`. The planner also refuses to submit an arm whose data is missing, so submit only the arms you have, e.g. `ARMS="s19p_inv s19s_inv"`.
 
+### SHREC2025 inputs: rebuild from the original archives
+
+The paper's SHREC2025 folders (`ssl_graphs_1k_geom_enriched_ri`, `ssl_graphs_1k_patchassign_k64`) have been deleted from `$WORK`. One CPU job on `prepost` rebuilds them from the organisers' original, unrotated archives:
+
+```bash
+mkdir -p logs/fw && sbatch jeanzay/build_shrec25_graphs.slurm    # log: logs/fw/S25_GRAPHS_<jobid>.out
+./jeanzay/check_data.sh                                            # when it finishes
+```
+
+What the job does:
+1. **Archives:** it reuses `$WORK/datasets/train_set.tar.xz` if the size matches exactly (4,449,169,028 bytes), and otherwise downloads it. `test_set.tar.xz` (1.1 GB) is downloaded to `$SCRATCH/shrec25_orig/archives`.
+2. **Graphs:** it runs the original pipeline unchanged (`tools/shrec25_rebuild/`, vendored copies of the original scripts) and uses the paper's split CSVs (`data_labels/shrec25_paper`).
+3. **Patch files:** k = 64, 16 and 256, so `build_patchassign.slurm` is not needed for SHREC2025.
+4. **Check against the paper graphs:** it compares a 100-graph sample with fingerprints of the paper graphs. Mesh edges and patch assignments must match exactly; floats must agree within 1e-4. **The job stops if anything differs.**
+5. **Safety copies:** one tarball per folder in `$STORE/fw_archives/`. After a `$SCRATCH` purge, `restore_data.sh` extracts them again.
+
+Re-running the job is safe: finished graphs are skipped.
+
+**Tested locally:** the rebuild on 7 sampled meshes gave exactly the paper's graphs and k=64 patch files (largest float difference 0).
+
+**Optional quick check first** (2 graphs, about 10 minutes; it catches dependency or download problems early):
+
+```bash
+ONLY=105m_1_A_A_model1,0 KS=64 SAVE=0 sbatch jeanzay/build_shrec25_graphs.slurm
+```
+
+The full run then continues from these 2 graphs.
+
 ## 1. Point 2: analysis of existing checkpoints
 
 ```bash
@@ -82,9 +110,7 @@ For an official submission to the organisers, build the graphs from the rotated 
 STUDY=multiscale19 ./jeanzay/submit_fw.sh         # k = 16, 64, 256; gate fusion; shared vs separate patch GNN
 python jeanzay/fw_grid.py --mode agg --study multiscale19
 
-# SHREC2025 needs k16 / k256 patch files (about 23k inodes; the builder first checks
-# that it reproduces the existing k64 files exactly)
-sbatch jeanzay/build_patchassign.slurm
+# SHREC2025: the k16 / k256 patch files come from build_shrec25_graphs.slurm (section 0)
 STUDY=multiscale25 ./jeanzay/submit_fw.sh
 ```
 
