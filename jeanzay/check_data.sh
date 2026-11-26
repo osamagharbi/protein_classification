@@ -1,7 +1,7 @@
 #!/bin/bash
 # Check that every input of the future-work jobs is present under DATA_ROOT.
 #   ./jeanzay/check_data.sh            (DATA_ROOT defaults to $WORK)
-DATA_ROOT="${DATA_ROOT:-$WORK}"
+DATA_ROOT="${DATA_ROOT:-$([ -d "$SCRATCH/fw_data" ] && echo "$SCRATCH/fw_data" || echo "$WORK")}"
 PROJECT="${PROJECT:-$WORK/protein_classification}"
 ok=1
 need() {  # need <path> <used by> [hint]
@@ -12,8 +12,7 @@ echo "DATA_ROOT=$DATA_ROOT"
 echo "SHREC2019"
 for d in ssl_graphs_shared_proteinsplit ssl_graphs_shared_proteinsplit_patchassign_k16 \
          ssl_graphs_shared_proteinsplit_patchassign_k64 ssl_graphs_shared_proteinsplit_patchassign_k256; do
-  need "$d" "rotation, multiscale19, analysis" \
-       "tar -xzf $WORK/phaseA_tarballs/tarballs/$d.tar.gz -C $DATA_ROOT   (check top dir first: tar -tzf ... | head -2)"
+  need "$d" "rotation, multiscale19, analysis"
 done
 for d in proteins species; do
   need "graphs_pyg_shared_$d/train_labels.csv" "SHREC2019 labels"
@@ -30,4 +29,5 @@ for f in shrec25_final/train_split.csv shrec25_final/val_split.csv shrec25_final
          shrec25_update_281025/test_labels.csv; do need "$PROJECT/data_labels/$f" "FINAL release / re-scoring"; done
 echo "checkpoints for the analysis"
 need "$WORK/protein_classification/runs_20260907.tar.zst" "extract_checkpoints.sh"
-[ $ok = 1 ] && echo "all inputs present" || echo "some inputs are missing (see hints above)"
+[ $ok = 1 ] && echo "all inputs present" \
+  || echo "some inputs are missing: run ./jeanzay/restore_data.sh (links or extracts them into \$SCRATCH/fw_data)"

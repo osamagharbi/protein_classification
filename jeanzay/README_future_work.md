@@ -17,8 +17,15 @@ cd $WORK/protein_classification
 git status                      # commit or stash any local edits first
 git fetch origin && git checkout future-work && git pull
 chmod +x jeanzay/*.sh
-./jeanzay/check_data.sh         # lists every input and how to restore a missing one
+./jeanzay/restore_data.sh       # links or extracts every graph folder into $SCRATCH/fw_data
+./jeanzay/check_data.sh         # confirms every input is present
 ```
+
+About `restore_data.sh`:
+- **What it does:** it looks in `$WORK`, `$SCRATCH` and `$STORE`. A graph folder that already exists is symlinked; one that exists only as an archive (`<name>.tar[.gz|.zst]`) is extracted. It reads the archive's layout first, so it does not matter how the archive was made.
+- **Defaults:** once `$SCRATCH/fw_data` exists, every fw script uses it automatically, so `$WORK` inodes are not used. `DATA_ROOT=...` overrides this.
+- **Scratch purge:** `$SCRATCH` deletes files not accessed for 30 days. If that happens, rerun the script; the archives stay in `$WORK`.
+- **Missing data:** a dataset it cannot find is reported as `MISSING`. The planner also refuses to submit an arm whose data is missing, so submit only the arms you have, e.g. `ARMS="s19p_inv s19s_inv"`.
 
 ## 1. Point 2: analysis of existing checkpoints
 

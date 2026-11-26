@@ -24,7 +24,7 @@ module load pytorch-gpu/py3/2.8.0
 source "$WORK/myvenv/bin/activate"
 
 PROJECT="${PROJECT:-$WORK/protein_classification}"
-DATA_ROOT="${DATA_ROOT:-$WORK}"
+DATA_ROOT="${DATA_ROOT:-$([ -d "$SCRATCH/fw_data" ] && echo "$SCRATCH/fw_data" || echo "$WORK")}"
 GRAPHS="${GRAPHS:-ssl_graphs_1k_geom_enriched_ri}"
 PREFIX="${PREFIX:-ssl_graphs_1k_patchassign}"
 KS="${KS:-16 256}"

@@ -113,7 +113,8 @@ def command(arm, seed, args):
               [f for f in (tr, va, te) if f and not os.path.isfile(f)]
     if missing:
         sys.exit("[preflight] missing:\n  " + "\n  ".join(missing) +
-                 "\n  -> see jeanzay/README_future_work.md (check_data.sh / build_patchassign.slurm)")
+                 "\n  -> run ./jeanzay/restore_data.sh (and sbatch jeanzay/build_patchassign.slurm for k16/k256);"
+                 "\n     or submit only the arms whose data is present: ARMS=\"...\"")
     out_dir = Path(args.study_root) / "runs"
     out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-u", str(TRAIN), "--graph-dir", graph_dir, "--feature-mode", fmode,
@@ -140,6 +141,8 @@ def command(arm, seed, args):
 
 def cmd_plan(args):
     t = tasks(args.study, args.arms, args.seeds)
+    for arm in dict.fromkeys(a for a, _ in t):   # preflight: refuse to submit if any arm lacks data
+        command(arm, t[0][1], args)
     for i, (a, s) in enumerate(t):
         print(f"  [{i:3d}] {tag(a, s)}")
     print(f"TASKS={len(t)}")

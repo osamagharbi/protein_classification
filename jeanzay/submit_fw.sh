@@ -14,7 +14,7 @@ set -euo pipefail
 export STUDY="${STUDY:?set STUDY=rotation|multiscale19|multiscale25|edges}"
 export SEEDS="${SEEDS:-1 2 3 4 5 6 7 8 9 10}"
 export ARMS="${ARMS:-}"
-export DATA_ROOT="${DATA_ROOT:-$WORK}"
+export DATA_ROOT="${DATA_ROOT:-$([ -d "$SCRATCH/fw_data" ] && echo "$SCRATCH/fw_data" || echo "$WORK")}"
 export PROJECT="${PROJECT:-$WORK/protein_classification}"
 CONCURRENCY="${CONCURRENCY:-30}"
 QOS="${QOS:-qos_gpu-t3}"
