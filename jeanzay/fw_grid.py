@@ -78,14 +78,15 @@ ARMS = {
     "ms25_gate_shared":  dict(ds="shrec25", fg="enriched", ks=[16, 64, 256],
                               flags=["--fusion", "gate", "--share-patch-gnn"]),
     "ms25_gate_sep":     dict(ds="shrec25", fg="enriched", ks=[16, 64, 256], flags=["--fusion", "gate"]),
-    # single-resolution references for the multi-scale arms (SHREC2025 has only k=64 runs)
+    # single-resolution references for the multi-scale arms, same paper labels and pipeline
+    "s25_k64":           dict(ds="shrec25", fg="enriched", k=64, flags=[]),
     "s25_k16":           dict(ds="shrec25", fg="enriched", k=16, flags=[]),
     "s25_k256":          dict(ds="shrec25", fg="enriched", k=256, flags=[]),
 }
 STUDIES = {
     "rotation": ["s19p_inv", "s19s_inv", "s25_inv", "s25final_base", "s25final_so3", "s25final_inv"],
     "multiscale19": ["ms19p_gate_shared", "ms19p_gate_sep", "ms19s_gate_shared", "ms19s_gate_sep"],
-    "multiscale25": ["ms25_gate_shared", "ms25_gate_sep", "s25_k16", "s25_k256"],
+    "multiscale25": ["ms25_gate_shared", "ms25_gate_sep", "s25_k16", "s25_k64", "s25_k256"],
     "edges": ["s19p_bidir", "s19s_bidir", "s25_bidir", "s25final_inv_bidir", "s25_inv_bidir"],
 }
 
