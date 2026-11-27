@@ -65,6 +65,9 @@ ARMS = {
     "s25_bidir":         dict(ds="shrec25", fg="enriched", k=64, flags=["--use-bidirectional-edges"]),
     "s25final_inv_bidir": dict(ds="shrec25", fg="enriched", k=64, labels="final",
                                flags=["--invariant", "--use-bidirectional-edges"] + ROT),
+    # invariant + bidirectional on the PAPER labels: directly comparable with the HiPatch reference
+    "s25_inv_bidir":     dict(ds="shrec25", fg="enriched", k=64,
+                              flags=["--invariant", "--use-bidirectional-edges"] + ROT),
     # ---------------- point 4: multi-scale ----------------
     "ms19p_gate_shared": dict(ds="shrec19_protein", fg="geom", ks=[16, 64, 256],
                               flags=["--fusion", "gate", "--share-patch-gnn"]),
@@ -80,7 +83,7 @@ STUDIES = {
     "rotation": ["s19p_inv", "s19s_inv", "s25_inv", "s25final_base", "s25final_so3", "s25final_inv"],
     "multiscale19": ["ms19p_gate_shared", "ms19p_gate_sep", "ms19s_gate_shared", "ms19s_gate_sep"],
     "multiscale25": ["ms25_gate_shared", "ms25_gate_sep"],
-    "edges": ["s19p_bidir", "s19s_bidir", "s25_bidir", "s25final_inv_bidir"],
+    "edges": ["s19p_bidir", "s19s_bidir", "s25_bidir", "s25final_inv_bidir", "s25_inv_bidir"],
 }
 
 
