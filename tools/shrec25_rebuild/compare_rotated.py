@@ -2,8 +2,11 @@
 """Check the FINAL-release (rotated) SHREC'25 graphs against the paper graphs, graph by graph.
 
 The rotated meshes are the paper meshes turned by a random rotation, so the same pipeline should give the
-same graphs up to that rotation. Float32 near-ties in farthest-point sampling can still pick a different
-vertex here and there (and reorder nodes), so exact hashes / summary statistics are the wrong test.
+same graphs up to that rotation. But FPS (sample_ssl_graphs.fps) computes distances in float32 through
+|a|^2 - 2a.b + |b|^2, which is not rotation-exact: a near-tie can flip at some pick t, and every later pick
+then follows another, equally valid path over the same surface (nodes are stored in pick order, so the
+first t nodes are shared and the rest mostly not). On Jean-Zay: 95.7% of 11,524 graphs share every vertex,
+99% share >= 99.6%, the worst shares 395/1000. Exact hashes / summary statistics are the wrong test.
 Instead, per graph id present in both builds:
 
   1. match vertices by rotation-invariant keys: the two potentials (read from the mesh, identical for the
@@ -12,13 +15,19 @@ Instead, per graph id present in both builds:
   2. overlap  = matched vertices / vertices                  (same surface: ~1.0; another surface: ~0)
   3. Kabsch   : one proper rotation R with pos_rot ~ pos_ref R^T on the matched vertices; residual RMS
                (same surface: ~1e-7; anything else: >1e-2). Normals checked with the same R.
-  4. edges    : Jaccard of the mesh edges among matched vertices
-  5. patches  : (with --ref-patches/--rot-patches) number of patches + adjusted Rand index of the patch
+  4. coverage : FPS guarantees every mesh vertex lies within the last FPS gap g (distance of the last
+               pick to the earlier ones) of the sample. So every rotated vertex, turned back by R, must
+               lie within g_ref of a paper vertex, and vice versa: max NN distance / g <= --max-cover
+               (same mesh: <= 1; a different surface breaks it). This is what makes a low overlap safe.
+     diverge  : first paper node (= FPS pick) without a partner: where the sampling paths split
+  5. edges    : Jaccard of the mesh edges among matched vertices
+  6. patches  : (with --ref-patches/--rot-patches) number of patches + adjusted Rand index of the patch
                labels on matched vertices. build_patchassign picks its first seed by node INDEX, so a
                reordered graph can get different (equally valid) patches: ARI is reported, not required to be 1
 
-Exit 1 if any graph has overlap < --min-overlap or a rotation residual > --max-resid (or, with patches,
-a different number of patches or median ARI < --min-median-ari).
+Exit 1 if any graph has fewer than --min-shared shared vertices (or overlap < --min-overlap, default off),
+a rotation residual > --max-resid or coverage > --max-cover (or, with patches, a different number of
+patches or median ARI < --min-median-ari).
 
   python tools/shrec25_rebuild/compare_rotated.py --ref $DATA_ROOT/ssl_graphs_1k_geom_enriched_ri \
       --rot $DATA_ROOT/ssl_graphs_1k_geom_enriched_ri_rot [--sample tools/shrec25_rebuild/fingerprints_paper.json] \
@@ -74,6 +83,11 @@ def kabsch(P, Q):
     return R, float(np.sqrt(((Q - P @ R.T) ** 2).sum(1).mean()))
 
 
+def last_gap(P):
+    """Distance of the last FPS pick to the earlier picks (nodes are stored in pick order)."""
+    return float(np.linalg.norm(P[:-1] - P[-1], axis=1).min()) if len(P) > 1 else 0.0
+
+
 def undirected(ei):
     e = np.sort(ei, axis=0)
     return set(map(tuple, e.T.tolist()))
@@ -89,6 +103,13 @@ def compare_one(job):
     if len(ia) >= 4:
         P, Q = A["pos"].double().numpy()[ia], B["pos"].double().numpy()[ib]
         R, out["resid"] = kabsch(P, Q)
+        PA, PB = A["pos"].double().numpy(), B["pos"].double().numpy() @ R   # B turned back onto A
+        ga, gb = last_gap(PA), last_gap(PB)
+        dab = cKDTree(PA).query(PB)[0].max(); dba = cKDTree(PB).query(PA)[0].max()
+        out["cover"] = float(max(dab / ga if ga > 0 else (0.0 if dab < 1e-6 else np.inf),
+                                 dba / gb if gb > 0 else (0.0 if dba < 1e-6 else np.inf)))
+        un = np.setdiff1d(np.arange(n), ia)
+        out["diverge"] = int(un[0]) if len(un) else n
         NA, NB = A["normals"].double().numpy()[ia], B["normals"].double().numpy()[ib]
         out["normal_resid"] = float(np.sqrt(((NB - NA @ R.T) ** 2).sum(1).mean()))
         a2b = -np.ones(n, np.int64); a2b[ia] = ib
@@ -101,7 +122,8 @@ def compare_one(job):
         ga = A["geom_features_raw"].double().numpy()[ia]; gb = B["geom_features_raw"].double().numpy()[ib]
         out["geom_same_frac"] = float(np.mean(np.all(np.abs(ga - gb) <= 1e-3 * np.maximum(1, np.abs(ga)), 1)))
     else:
-        out.update(resid=float("inf"), normal_resid=float("inf"), edge_jaccard=0.0, geom_same_frac=0.0)
+        out.update(resid=float("inf"), normal_resid=float("inf"), edge_jaccard=0.0, geom_same_frac=0.0,
+                   cover=float("inf"), diverge=0)
     if refpat_p is not None:
         if not Path(rotpat_p).is_file():
             out["patch_missing"] = True
@@ -125,7 +147,9 @@ def main():
     ap.add_argument("--sample", help="fingerprint JSON: compare only its sampled ids (default: every common id)")
     ap.add_argument("--ids", help="comma-separated split/id keys, e.g. train_set/3av2_3_G_G_model1")
     ap.add_argument("--key-tol", type=float, default=1e-4)
-    ap.add_argument("--min-overlap", type=float, default=0.9)
+    ap.add_argument("--min-shared", type=int, default=20, help="shared vertices needed to fit the rotation")
+    ap.add_argument("--min-overlap", type=float, default=0.0)
+    ap.add_argument("--max-cover", type=float, default=1.05)
     ap.add_argument("--max-resid", type=float, default=1e-4)
     ap.add_argument("--min-median-ari", type=float, default=0.9)
     ap.add_argument("--workers", type=int, default=4)
@@ -162,15 +186,19 @@ def main():
           f"{len(res) - full} differ in some vertices")
     print(f"  vertex overlap   min {ov.min():.3f}  p1 {q(ov, 1):.3f}  median {q(ov, 50):.4f}")
     print(f"  rotation resid   max {rs.max():.2e}  median {q(rs, 50):.2e}   (pos in the unit ball)")
+    cv = np.array([r["cover"] for r in res])
     print(f"  normal resid     max {max(r['normal_resid'] for r in res):.2e}")
+    print(f"  coverage         max {cv.max():.3f}  median {q(cv, 50):.3f}   (NN distance / last FPS gap; same mesh <= 1)")
+    print(f"  overlap < 0.9: {int(np.sum(ov < 0.9))} graphs, < 0.99: {int(np.sum(ov < 0.99))} graphs")
     print(f"  mesh-edge Jaccard (matched vertices)  min {min(r['edge_jaccard'] for r in res):.4f}")
     print(f"  geom descriptors equal (1e-3)         min {min(r['geom_same_frac'] for r in res):.3f} of matched vertices")
     worst = sorted(res, key=lambda r: r["overlap"])[:5]
     for r in worst:
         if r["overlap"] < 1:
-            print(f"    {r['key']}: {r['matched']}/{r['n_ref']} vertices shared, resid {r['resid']:.1e}, "
-                  f"edge Jaccard {r['edge_jaccard']:.4f}" + (f", patch ARI {r['ari']:.3f}" if "ari" in r else ""))
-    bad = [r for r in res if r["overlap"] < a.min_overlap or r["resid"] > a.max_resid]
+            print(f"    {r['key']}: {r['matched']}/{r['n_ref']} vertices shared, paths split at pick {r['diverge']}, "
+                  f"resid {r['resid']:.1e}, coverage {r['cover']:.3f}, edge Jaccard {r['edge_jaccard']:.4f}" + (f", patch ARI {r['ari']:.3f}" if "ari" in r else ""))
+    bad = [r for r in res if r["matched"] < min(a.min_shared, r["n_ref"]) or r["overlap"] < a.min_overlap
+           or r["resid"] > a.max_resid or r["cover"] > a.max_cover]
     if a.ref_patches:
         miss = [r for r in res if r.get("patch_missing")]
         npd = [r for r in res if not r.get("patch_missing") and r["np_ref"] != r["np_rot"]]
@@ -189,10 +217,10 @@ def main():
         print(f"  per-graph results -> {a.out}")
     if bad:
         for r in bad[:10]:
-            print(f"  FAIL {r['key']}: overlap {r['overlap']:.3f}, resid {r['resid']:.2e}")
+            print(f"  FAIL {r['key']}: overlap {r['overlap']:.3f}, resid {r['resid']:.2e}, coverage {r.get('cover', 0):.3f}")
         sys.exit(1)
     print("VERIFIED: FINAL-release graphs are the paper graphs rotated "
-          f"(min vertex overlap {ov.min():.3f}, max rotation residual {rs.max():.1e})")
+          f"(max rotation residual {rs.max():.1e}, max coverage {cv.max():.3f}; min vertex overlap {ov.min():.3f})")
 
 
 if __name__ == "__main__":

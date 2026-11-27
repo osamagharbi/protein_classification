@@ -182,9 +182,14 @@ mkdir -p logs/fw && RELEASE=rot sbatch jeanzay/build_shrec25_graphs.slurm
 grep -E "streaming|built|compared|overlap|resid|patches:|VERIFIED|FAIL|ready" logs/fw/S25_GRAPHS_<jobid>.out
 ```
 
-The job checks every rotated graph against the paper graph of the same id (`tools/shrec25_rebuild/compare_rotated.py`; the paper graphs must be in `$SCRATCH/fw_data`). It matches vertices by rotation-invariant keys (the two potentials and the distance to the centre). It then requires that at least 90% of the vertices are shared and that one rotation maps the shared vertices onto each other with residual at most 1e-4. A different surface shares about 0 vertices, and no rotation fits it. It also reports mesh-edge agreement and, for k=64, the patch count and adjusted Rand index (ARI) of the patches. Per-graph results go to `ssl_graphs_1k_geom_enriched_ri_rot/checks/`.
+The job checks every rotated graph against the paper graph of the same id (`tools/shrec25_rebuild/compare_rotated.py`; the paper graphs must be in `$SCRATCH/fw_data`). It matches vertices by rotation-invariant keys (the two potentials and the distance to the centre) and requires three things:
+- at least 20 shared vertices;
+- one rotation mapping the shared vertices onto each other, with residual at most 1e-4;
+- **coverage:** FPS guarantees that every mesh vertex lies within the last sampling gap of the sample. So every rotated vertex, turned back, must lie within that gap of a paper vertex, and vice versa. Coverage is the ratio of that distance to the gap and must be at most 1.05. A different surface breaks this.
 
-Summary statistics are not enough here. In the first build (job 898723), 5 of the 100 fingerprint graphs had a slightly different sampled vertex set: float32 near-ties in FPS choose a different vertex after rotation. The patches of such a graph can then differ too, because `build_patchassign.py` picks its first seed by node index.
+It also reports where the two sampling paths split, the mesh-edge agreement and, for k=64, the patch count and adjusted Rand index (ARI) of the patches. Per-graph results go to `ssl_graphs_1k_geom_enriched_ri_rot/checks/`.
+
+Why the vertex sets differ at all: FPS computes distances in float32 as |a|^2 - 2a.b + |b|^2, which is not exact under rotation. A near-tie can flip at some pick, and every later pick then follows another, equally valid path over the same surface. Nodes are stored in pick order, so the first picks are shared. In the first build (job 898723), 95.7% of the 11,524 graphs shared every vertex and 99% shared at least 99.6%, but 4 shared less than 90% (the lowest, 8ysx, 395 of 1000), each with a rotation residual of about 1e-7 on the shared vertices. The patches of such a graph differ too, because `build_patchassign.py` picks its first seed by node index.
 
 A local check on 7 surfaces (4 compared in full, 3 through the job itself) gave these results:
 - **Same surfaces:** the same 1,000 sampled vertices and the same mesh edges.
