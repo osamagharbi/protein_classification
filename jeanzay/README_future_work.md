@@ -189,7 +189,12 @@ The job checks every rotated graph against the paper graph of the same id (`tool
 
 It also reports where the two sampling paths split, the mesh-edge agreement and, for k=64, the patch count and adjusted Rand index (ARI) of the patches. Per-graph results go to `ssl_graphs_1k_geom_enriched_ri_rot/checks/`.
 
-Why the vertex sets differ at all: FPS computes distances in float32 as |a|^2 - 2a.b + |b|^2, which is not exact under rotation. A near-tie can flip at some pick, and every later pick then follows another, equally valid path over the same surface. Nodes are stored in pick order, so the first picks are shared. In the first build (job 898723), 95.7% of the 11,524 graphs shared every vertex and 99% shared at least 99.6%, but 4 shared less than 90% (the lowest, 8ysx, 395 of 1000), each with a rotation residual of about 1e-7 on the shared vertices. The patches of such a graph differ too, because `build_patchassign.py` picks its first seed by node index.
+Why the vertex sets differ at all: FPS computes distances in float32 as |a|^2 - 2a.b + |b|^2, which is not exact under rotation. A near-tie can flip at some pick, and every later pick then follows another, equally valid path over the same surface. The sampler largely comes back to the same vertices, so the shared vertices are spread over the whole sequence: the 5 lowest-overlap graphs split as early as picks 1–25 and still share 395–901 of 1000 vertices.
+
+Result of the build (job 906399):
+- **Vertices:** 95.7% of the 11,524 graphs share every vertex, and 99% share at least 99.6%. Only 4 share less than 90% (the lowest, 8ysx, 395 of 1000).
+- **Same surfaces:** every graph fits one rotation (residual at most 4.6e-5) with coverage at most 1.000.
+- **Patches (k=64):** identical (ARI 1) in 97.9% of graphs, including every graph that shares all its vertices. The minimum ARI is 0.43, in graphs whose sampling split early, because `build_patchassign.py` picks its first seed by node index.
 
 A local check on 7 surfaces (4 compared in full, 3 through the job itself) gave these results:
 - **Same surfaces:** the same 1,000 sampled vertices and the same mesh edges.

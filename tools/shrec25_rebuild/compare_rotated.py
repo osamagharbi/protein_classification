@@ -4,9 +4,10 @@
 The rotated meshes are the paper meshes turned by a random rotation, so the same pipeline should give the
 same graphs up to that rotation. But FPS (sample_ssl_graphs.fps) computes distances in float32 through
 |a|^2 - 2a.b + |b|^2, which is not rotation-exact: a near-tie can flip at some pick t, and every later pick
-then follows another, equally valid path over the same surface (nodes are stored in pick order, so the
-first t nodes are shared and the rest mostly not). On Jean-Zay: 95.7% of 11,524 graphs share every vertex,
-99% share >= 99.6%, the worst shares 395/1000. Exact hashes / summary statistics are the wrong test.
+then follows another, equally valid path over the same surface. FPS largely re-converges (two near-tied
+candidates both get picked, in another order), so shared vertices are spread over the whole pick sequence:
+on Jean-Zay (job 906399) 95.7% of 11,524 graphs share every vertex, 99% share >= 99.6%, and the 5 lowest
+(395-901/1000 shared) split as early as picks 1-25. Patches: ARI 1 for every graph sharing every vertex. Exact hashes / summary statistics are the wrong test.
 Instead, per graph id present in both builds:
 
   1. match vertices by rotation-invariant keys: the two potentials (read from the mesh, identical for the
