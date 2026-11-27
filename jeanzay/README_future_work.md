@@ -115,8 +115,43 @@ STUDY=multiscale25 ./jeanzay/submit_fw.sh
 ```
 
 Arm suffixes:
-- `_shared`: one patch GNN for all resolutions, nearly the single-scale parameter count (0.68M vs 0.75M).
-- `_sep`: one patch GNN per resolution (1.2M).
+- `_shared`: one patch GNN for all resolutions, 0.69M parameters. The single-scale model trains 0.66M; its reported 0.76M includes a 99k SupCon head that is never used.
+- `_sep`: one patch GNN per resolution, 1.22M parameters.
+- `s25_k16`, `s25_k256` (multiscale25 only): single-resolution references. SHREC2025 otherwise only has k=64 runs.
+
+### Is the multi-scale model implemented correctly?
+
+`tools/verify_multiscale.py` answers this in two parts.
+
+**Part 1, structure.** It runs on real graphs with untrained models and takes about a minute on the login node:
+
+```bash
+python tools/verify_multiscale.py --graph-dir $SCRATCH/fw_data/ssl_graphs_1k_geom_enriched_ri \
+    --assign-dirs $SCRATCH/fw_data/ssl_graphs_1k_patchassign_k{16,64,256} --n 32
+```
+
+Each resolution must receive exactly the inputs of a single-scale run at that k. With one resolution, the model must give the single-scale model's logits; with three, each branch must equal a single-scale model, and the fused output must equal `head(sum_s gate_s * readout_s)`. The script also checks:
+- gate weights: one per protein and resolution, summing to 1, independent of the rest of the batch;
+- gradients reach the gate and every branch;
+- rotation invariance, with `--invariant`;
+- bidirectional edges.
+
+All 31 checks pass on local data.
+
+**Part 2, trained runs** (test set, a few minutes on one GPU):
+
+```bash
+srun --account=acu@v100 --qos=qos_gpu-dev --gres=gpu:1 --cpus-per-task=10 --hint=nomultithread --time=00:30:00 \
+    python tools/verify_multiscale.py --skip-structure --runs-root runs/fw_multiscale25/runs --data-root $SCRATCH/fw_data
+```
+
+For each run it reports:
+- accuracy with the learned gate, with each resolution alone, without each resolution, and with equal weights;
+- gate statistics: mean weight per resolution, entropy, and the classes per resolution.
+
+The report goes to `runs/fw_analysis/multiscale_check/report.md`. How to read it:
+- **Gate collapse:** one resolution alone ≈ the full model, with low entropy, means the model is single-scale in practice.
+- **Gate not helping:** equal weights ≈ the learned gate means the gate adds nothing.
 
 Compare against the single-scale k64 recheck runs (same seeds 1–10).
 To see which resolution each class relies on (gate weights per class), run:
