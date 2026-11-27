@@ -5,13 +5,14 @@
 #   STUDY=multiscale19  ./jeanzay/submit_fw.sh    # point 4, SHREC2019 (4 arms x 10 = 40 runs)
 #   STUDY=multiscale25  ./jeanzay/submit_fw.sh    # point 4, SHREC2025 (needs k16/k256 sidecars)
 #   STUDY=edges         ./jeanzay/submit_fw.sh    # bidirectional message passing (4 arms x 10 = 40 runs)
+#   STUDY=rot25         ./jeanzay/submit_fw.sh    # all SHREC2025 experiments on the FINAL rotated release (10 arms)
 #
 # Options (env): SMOKE=1 (1 epoch, seed 1, dev QoS: check everything runs first)
 #                DRY_RUN=1  SEEDS="1 2 3"  ARMS="s25final_inv s25final_base"
 #                CONCURRENCY=30  DATA_ROOT=$WORK  QOS  TIME
 set -euo pipefail
 
-export STUDY="${STUDY:?set STUDY=rotation|multiscale19|multiscale25|edges}"
+export STUDY="${STUDY:?set STUDY=rotation|multiscale19|multiscale25|edges|rot25}"
 export SEEDS="${SEEDS:-1 2 3 4 5 6 7 8 9 10}"
 export ARMS="${ARMS:-}"
 export DATA_ROOT="${DATA_ROOT:-$([ -d "$SCRATCH/fw_data" ] && echo "$SCRATCH/fw_data" || echo "$WORK")}"

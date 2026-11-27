@@ -16,6 +16,11 @@ Studies
   multiscale25  same on SHREC2025 (needs k16/k256 sidecars: jeanzay/build_patchassign.slurm).
   edges         reference model with bidirectional message passing (the reported models
                 use each stored edge in one direction only), + the invariant FINAL arm.
+  rot25         every SHREC2025 experiment again on the FINAL release itself: graphs built
+                from the organisers' ROTATED meshes (train AND test rotated, 98 classes;
+                jeanzay/build_shrec25_graphs.slurm with RELEASE=rot): reference, SO(3) aug,
+                invariant, bidirectional, invariant+bidirectional, k = 16/64/256, gated
+                multi-scale (shared / separate), flat (no patch stage).
 
 Modes
   plan  print the task list and TASKS=<n> (read by submit_fw.sh)
@@ -44,6 +49,9 @@ sys.path.insert(0, str(REPO))
 from grid_hiergin import FIXED, DATASETS, TRAIN, resolve_paths  # noqa: E402
 
 LABELS = REPO / "data_labels"
+# FINAL release graphs, built from the rotated meshes (RELEASE=rot sbatch jeanzay/build_shrec25_graphs.slurm)
+ROT_GRAPHS = "ssl_graphs_1k_geom_enriched_ri_rot"
+ROT_ASSIGN = "ssl_graphs_1k_patchassign_rot_k{k}"
 ROT = ["--test-rotations", "5"]
 SO3_AUG = ["--augment", "--aug-scale-std", "0", "--aug-jitter-std", "0"]
 
@@ -82,12 +90,31 @@ ARMS = {
     "s25_k64":           dict(ds="shrec25", fg="enriched", k=64, flags=[]),
     "s25_k16":           dict(ds="shrec25", fg="enriched", k=16, flags=[]),
     "s25_k256":          dict(ds="shrec25", fg="enriched", k=256, flags=[]),
+    # ---------------- FINAL release, rotated meshes (train and test), 98 classes ----------------
+    # same recipe; every single-scale arm is also scored under 5 extra random rotations (ROT)
+    "r25_k64":           dict(ds="shrec25", fg="enriched", k=64, release="rot", flags=ROT),
+    "r25_so3":           dict(ds="shrec25", fg="enriched", k=64, release="rot", flags=SO3_AUG + ROT),
+    "r25_inv":           dict(ds="shrec25", fg="enriched", k=64, release="rot", flags=["--invariant"] + ROT),
+    "r25_bidir":         dict(ds="shrec25", fg="enriched", k=64, release="rot",
+                              flags=["--use-bidirectional-edges"] + ROT),
+    "r25_inv_bidir":     dict(ds="shrec25", fg="enriched", k=64, release="rot",
+                              flags=["--invariant", "--use-bidirectional-edges"] + ROT),
+    "r25_k16":           dict(ds="shrec25", fg="enriched", k=16, release="rot", flags=ROT),
+    "r25_k256":          dict(ds="shrec25", fg="enriched", k=256, release="rot", flags=ROT),
+    "r25_ms_gate_shared": dict(ds="shrec25", fg="enriched", ks=[16, 64, 256], release="rot",
+                               flags=["--fusion", "gate", "--share-patch-gnn"]),
+    "r25_ms_gate_sep":   dict(ds="shrec25", fg="enriched", ks=[16, 64, 256], release="rot",
+                              flags=["--fusion", "gate"]),
+    "r25_flat5":         dict(ds="shrec25", fg="enriched", k=64, release="rot",   # no patch stage, 5 node layers
+                              flags=["--flat", "--node-layers", "5"] + ROT),
 }
 STUDIES = {
     "rotation": ["s19p_inv", "s19s_inv", "s25_inv", "s25final_base", "s25final_so3", "s25final_inv"],
     "multiscale19": ["ms19p_gate_shared", "ms19p_gate_sep", "ms19s_gate_shared", "ms19s_gate_sep"],
     "multiscale25": ["ms25_gate_shared", "ms25_gate_sep", "s25_k16", "s25_k64", "s25_k256"],
     "edges": ["s19p_bidir", "s19s_bidir", "s25_bidir", "s25final_inv_bidir", "s25_inv_bidir"],
+    "rot25": ["r25_k64", "r25_so3", "r25_inv", "r25_bidir", "r25_inv_bidir", "r25_k16", "r25_k256",
+              "r25_ms_gate_shared", "r25_ms_gate_sep", "r25_flat5"],
 }
 
 
@@ -111,16 +138,22 @@ def command(arm, seed, args):
     k0 = c["ks"][0] if "ks" in c else c["k"]
     graph_dir, assign_dir, tr, te, fmode = resolve_paths(args.data_root, c["ds"], c["fg"], k0)
     va = None
-    if c.get("labels") == "final":
+    assign_tmpl = DATASETS[c["ds"]]["assign_tmpl"]
+    if c.get("release") == "rot":
+        graph_dir = str(Path(args.data_root) / ROT_GRAPHS)
+        assign_tmpl = ROT_ASSIGN
+        assign_dir = str(Path(args.data_root) / assign_tmpl.format(k=k0))
+    if c.get("labels") == "final" or c.get("release") == "rot":
         tr, va, te = (str(LABELS / "shrec25_final" / f) for f in
                       ("train_split.csv", "val_split.csv", "test_labels.csv"))
-    need = [graph_dir] + ([str(Path(args.data_root) / DATASETS[c["ds"]]["assign_tmpl"].format(k=k))
+    need = [graph_dir] + ([str(Path(args.data_root) / assign_tmpl.format(k=k))
                            for k in c["ks"]] if "ks" in c else [assign_dir])
     missing = [p for p in need if not os.path.isdir(p)] + \
               [f for f in (tr, va, te) if f and not os.path.isfile(f)]
     if missing:
         sys.exit("[preflight] missing:\n  " + "\n  ".join(missing) +
                  "\n  -> run ./jeanzay/restore_data.sh (and sbatch jeanzay/build_patchassign.slurm for k16/k256);"
+                 "\n     FINAL-release (r25_*) inputs: RELEASE=rot sbatch jeanzay/build_shrec25_graphs.slurm;"
                  "\n     or submit only the arms whose data is present: ARMS=\"...\"")
     out_dir = Path(args.study_root) / "runs"
     out_dir.mkdir(parents=True, exist_ok=True)

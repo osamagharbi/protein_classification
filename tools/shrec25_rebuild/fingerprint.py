@@ -14,6 +14,13 @@ Per sampled graph:
          --patches .../ssl_graphs_1k_patchassign_k64 --out tools/shrec25_rebuild/fingerprints_paper.json
   python tools/shrec25_rebuild/fingerprint.py verify --graphs $DATA_ROOT/ssl_graphs_1k_geom_enriched_ri \
          [--patches $DATA_ROOT/ssl_graphs_1k_patchassign_k64] --ref tools/shrec25_rebuild/fingerprints_paper.json
+
+--rotated: graphs built from the FINAL release's rotated meshes. These are rotated copies of the paper
+graphs, but float32 near-ties in FPS swap ~1% of the node order, so exact hashes cannot match. Checked
+instead: node count, tensor shapes (edge count), and per-column mean/min/max of every rotation- and
+order-invariant feature (potentials, the 13 geometric descriptors, the invariant columns of x); xyz,
+normals and the per-edge RI features (direction-dependent) are shape-checked only; patches: count only.
+Sampled graphs missing from the build (surfaces dropped by the FINAL release) are skipped.
 """
 import argparse
 import hashlib
@@ -73,34 +80,44 @@ def close(a, b, atol, rtol):
     return a.shape == b.shape and bool(np.all(np.abs(a - b) <= atol + rtol * np.abs(b)))
 
 
+ROTATING = {"pos", "xyz_raw", "normals", "ri_feat", "ri_lrf_feat"}   # --rotated: shape check only
+X_INVARIANT = [0, 1] + list(range(8, 21))   # x: potentials + 13 geometric descriptors (2-7 = normals, xyz)
+
+
 def verify(a):
     ref = json.loads(Path(a.ref).read_text())
     bad, worst, skipped = [], 0.0, 0
     for key, r in ref["graphs"].items():
         p = Path(a.graphs) / f"{key}.pt"
         if not p.is_file():
-            if a.present_only:
+            if a.present_only or a.rotated:
                 skipped += 1; continue
             bad.append(f"{key}: missing"); continue
         g = graph_fp(p)
         if g["keys"] != r["keys"]:
             bad.append(f"{key}: keys {g['keys']} != {r['keys']}"); continue
-        if g["num_nodes"] != r["num_nodes"] or g["edge_index_mesh"] != r["edge_index_mesh"]:
+        if g["num_nodes"] != r["num_nodes"] or (not a.rotated and g["edge_index_mesh"] != r["edge_index_mesh"]):
             bad.append(f"{key}: different sampled vertices / mesh edges"); continue
         for k, rv in r["float"].items():
             gv = g["float"].get(k)
             if gv is None or gv["shape"] != rv["shape"]:
                 bad.append(f"{key}: {k} shape {gv and gv['shape']} != {rv['shape']}"); continue
+            if a.rotated and k in ROTATING:
+                continue
             for stat in ("mean", "min", "max"):
-                d = float(np.max(np.abs(np.asarray(gv[stat]) - np.asarray(rv[stat])))) if rv[stat] else 0.0
+                gs, rs = gv[stat], rv[stat]
+                if a.rotated and k == "x":
+                    gs, rs = [gs[i] for i in X_INVARIANT], [rs[i] for i in X_INVARIANT]
+                d = float(np.max(np.abs(np.asarray(gs) - np.asarray(rs)))) if rs else 0.0
                 worst = max(worst, d)
-                if not close(gv[stat], rv[stat], a.atol, a.rtol):
+                if not close(gs, rs, a.atol, a.rtol):
                     bad.append(f"{key}: {k}.{stat} differs (max abs diff {d:.3g})"); break
         if a.patches and key in ref["patches"]:
             pp = Path(a.patches) / f"{key}.pt"
             if not pp.is_file():
                 bad.append(f"{key}: patch file missing"); continue
-            if patch_fp(pp) != ref["patches"][key]:
+            pf, rf = patch_fp(pp), ref["patches"][key]
+            if (pf["num_patches"] != rf["num_patches"]) if a.rotated else (pf != rf):
                 bad.append(f"{key}: patch assignment differs")
     n = len(ref["graphs"]) - skipped
     if n == 0:
@@ -111,7 +128,10 @@ def verify(a):
         print("  DIFF", b)
     if bad:
         sys.exit(1)
-    print("VERIFIED: identical to the reference graphs")
+    if skipped:
+        print(f"  ({skipped} sampled graphs not in this build, skipped)")
+    print("VERIFIED: " + ("rotated copies of the reference graphs (invariant features identical)"
+                          if a.rotated else "identical to the reference graphs"))
 
 
 def main():
@@ -124,6 +144,7 @@ def main():
     ap.add_argument("--n-train", type=int, default=60)
     ap.add_argument("--n-test", type=int, default=40)
     ap.add_argument("--present-only", action="store_true", help="skip sampled graphs that are not built (smoke tests)")
+    ap.add_argument("--rotated", action="store_true", help="graphs from the FINAL release's rotated meshes")
     ap.add_argument("--atol", type=float, default=1e-4)
     ap.add_argument("--rtol", type=float, default=1e-4)
     a = ap.parse_args()

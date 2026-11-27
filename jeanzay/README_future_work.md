@@ -9,6 +9,7 @@ All new model options are opt-in: existing scripts, runs and checkpoints behave 
 | 3 | Does an exactly rotation-invariant HiPatchNet hold its accuracy on rotated surfaces (FINAL SHREC2025 release)? | `--invariant`, `--test-rotations` | 60 runs |
 | 4 | Does combining resolutions in one model help? | `--multi-assign-dirs`, `--fusion`, `--share-patch-gnn` | 40 runs (SHREC2019) + 20 (SHREC2025) |
 | + | Does bidirectional message passing help? | `--use-bidirectional-edges` (existing flag) | 40 runs |
+| 5 | All SHREC2025 experiments on the FINAL release itself (rotated train and test meshes, 98 classes) | `RELEASE=rot` graph build, study `rot25` | 1 CPU job + 10 arms x seeds |
 
 ## 0. Get the code
 
@@ -168,6 +169,52 @@ The reported models pass messages along each stored edge in one direction only. 
 ```bash
 STUDY=edges ./jeanzay/submit_fw.sh     # s19p/s19s/s25 reference + bidirectional edges, and invariant FINAL + bidirectional
 python jeanzay/fw_grid.py --mode agg --study edges
+```
+
+## 5. SHREC2025 FINAL release (rotated meshes): every experiment again
+
+Sections 2–4 train on our graphs of the original, unrotated surfaces. The `s25final_*` arms only change the labels and rotate the *test* set. In the FINAL release, the *training* meshes are rotated as well, each surface by its own random rotation. Study `rot25` reruns every SHREC2025 experiment on graphs built from the released rotated meshes: the official protocol.
+
+**Inputs.** The rotated archives are already on Jean-Zay: the Mamba baselines downloaded them to `$SCRATCH/shrec25_final_rot/raw/archives/`, and the job reuses them without downloading again. One CPU job builds `ssl_graphs_1k_geom_enriched_ri_rot` (9,219 train / 2,305 test, 98 classes) and `ssl_graphs_1k_patchassign_rot_k{64,16,256}` under `$SCRATCH/fw_data`:
+
+```bash
+mkdir -p logs/fw && RELEASE=rot sbatch jeanzay/build_shrec25_graphs.slurm
+grep -E "streaming|built|VERIFIED|DIFF|ready" logs/fw/S25_GRAPHS_<jobid>.out
+```
+
+The job checks the result with `fingerprint.py verify --rotated` against the paper fingerprints. Every pipeline step is rotation-invariant except xyz and normals, so it checks node counts, edge counts, and the potentials and 13 geometric descriptors.
+
+A local check on 7 surfaces (4 compared in full, 3 through the job itself) gave these results:
+- **Same surfaces:** the same 1,000 sampled vertices and the same mesh edges.
+- **A pure rotation:** xyz and normals differ by a rotation, with residual about 1e-7 and angles of 125–176°.
+- **Same patches:** the k=64 partitions of the 4 surfaces compared in full are identical (adjusted Rand index 1.000).
+- **Node order:** about 1% of nodes swap position, from float32 near-ties in FPS, so exact hashes cannot match. Edge directions are unchanged.
+
+**Arms** (`jeanzay/fw_grid.py`; same recipe, final labels, 5 extra test rotations for single-scale arms):
+
+| Arm | Question |
+|---|---|
+| `r25_k64` | reference HiPatchNet, k=64, under the official protocol |
+| `r25_so3` | + random-rotation augmentation |
+| `r25_inv` | exactly rotation-invariant encoder |
+| `r25_bidir`, `r25_inv_bidir` | bidirectional message passing, alone and with the invariant encoder |
+| `r25_k16`, `r25_k256` | patch resolution |
+| `r25_ms_gate_shared`, `r25_ms_gate_sep` | gated multi-scale k = 16/64/256 |
+| `r25_flat5` | no patch stage (5 node layers): does the hierarchy still help? |
+
+```bash
+SMOKE=1 STUDY=rot25 ./jeanzay/submit_fw.sh                                     # 1 epoch per arm (10 tasks, dev QoS)
+QOS=qos_gpu-t3 TIME=02:00:00 SEEDS="1 2 3" STUDY=rot25 ./jeanzay/submit_fw.sh   # 30 runs, ~30-45 min each
+python jeanzay/fw_grid.py --mode agg --study rot25 --seeds 1 2 3                # -> runs/fw_rot25/summary.md
+```
+
+The analyses work the same way on these runs:
+
+```bash
+python tools/ensemble_attribution.py --runs-root runs/fw_rot25/runs --include "r25_k" \
+    --stages predict ensemble report --ensemble-size 3 --out runs/fw_analysis/rot25_ensembles
+python tools/verify_multiscale.py --skip-structure --runs-root runs/fw_rot25/runs --data-root $SCRATCH/fw_data \
+    --out runs/fw_analysis/rot25_multiscale_check/report.md
 ```
 
 ## Notes
