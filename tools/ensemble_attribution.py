@@ -81,7 +81,8 @@ def run_identity(run_dir, cfg):
     m = RUN_RX.match(cfg.get("run_name") or run_dir.name)
     multi = cfg.get("multi_assign_dirs")
     if m:
-        fam = f"{m['ds']}_{m['fg']}_{(m['arch'] + '_') if m['arch'] else ''}{m['bb']}_h{m['h']}"
+        bb = re.sub(r"(?:^|_)k\d+(?=_|$)", "", m["bb"])   # fw arm names carry k (s25_k16_gvp -> s25_gvp)
+        fam = f"{m['ds']}_{m['fg']}_{(m['arch'] + '_') if m['arch'] else ''}{bb}_h{m['h']}"
         k = int(m["k"])
         seed = int(m["seed"])
     else:
