@@ -179,10 +179,12 @@ Sections 2–4 train on our graphs of the original, unrotated surfaces. The `s25
 
 ```bash
 mkdir -p logs/fw && RELEASE=rot sbatch jeanzay/build_shrec25_graphs.slurm
-grep -E "streaming|built|VERIFIED|DIFF|ready" logs/fw/S25_GRAPHS_<jobid>.out
+grep -E "streaming|built|compared|overlap|resid|patches:|VERIFIED|FAIL|ready" logs/fw/S25_GRAPHS_<jobid>.out
 ```
 
-The job checks the result with `fingerprint.py verify --rotated` against the paper fingerprints. Every pipeline step is rotation-invariant except xyz and normals, so it checks node counts, edge counts, and the potentials and 13 geometric descriptors.
+The job checks every rotated graph against the paper graph of the same id (`tools/shrec25_rebuild/compare_rotated.py`; the paper graphs must be in `$SCRATCH/fw_data`). It matches vertices by rotation-invariant keys (the two potentials and the distance to the centre). It then requires that at least 90% of the vertices are shared and that one rotation maps the shared vertices onto each other with residual at most 1e-4. A different surface shares about 0 vertices, and no rotation fits it. It also reports mesh-edge agreement and, for k=64, the patch count and adjusted Rand index (ARI) of the patches. Per-graph results go to `ssl_graphs_1k_geom_enriched_ri_rot/checks/`.
+
+Summary statistics are not enough here. In the first build (job 898723), 5 of the 100 fingerprint graphs had a slightly different sampled vertex set: float32 near-ties in FPS choose a different vertex after rotation. The patches of such a graph can then differ too, because `build_patchassign.py` picks its first seed by node index.
 
 A local check on 7 surfaces (4 compared in full, 3 through the job itself) gave these results:
 - **Same surfaces:** the same 1,000 sampled vertices and the same mesh edges.

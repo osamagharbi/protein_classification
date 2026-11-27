@@ -21,6 +21,9 @@ instead: node count, tensor shapes (edge count), and per-column mean/min/max of 
 order-invariant feature (potentials, the 13 geometric descriptors, the invariant columns of x); xyz,
 normals and the per-edge RI features (direction-dependent) are shape-checked only; patches: count only.
 Sampled graphs missing from the build (surfaces dropped by the FINAL release) are skipped.
+Near-ties can also change a few sampled vertices (5 of the 100 sampled graphs in the Jean-Zay build), which
+shifts these statistics, so --rotated can report DIFFs on a correct build. The definitive check, graph by graph
+against the paper graphs, is compare_rotated.py (what build_shrec25_graphs.slurm runs for RELEASE=rot).
 """
 import argparse
 import hashlib

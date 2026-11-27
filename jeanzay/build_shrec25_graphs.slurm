@@ -27,7 +27,8 @@
 # RELEASE=rot: the FINAL release (Sept 2026) instead: rotated meshes train_set_rot.tar.xz / test_set_rot.tar.xz
 # (reused from $SCRATCH/shrec25_final_rot/raw/archives, where the Mamba baselines downloaded them), final
 # labels (98 classes) -> $DATA_ROOT/ssl_graphs_1k_geom_enriched_ri_rot + ssl_graphs_1k_patchassign_rot_k{64,16,256}.
-# Verified with fingerprint.py --rotated: same surfaces as the paper graphs up to a rotation.
+# Checked graph by graph against the paper graphs in $DATA_ROOT (tools/shrec25_rebuild/compare_rotated.py):
+# shared vertices, one rotation mapping them (residual), mesh edges, k64 patches (ARI).
 #   mkdir -p logs/fw && RELEASE=rot sbatch jeanzay/build_shrec25_graphs.slurm
 set -euo pipefail
 
@@ -45,13 +46,19 @@ RELEASE="${RELEASE:-paper}"
 case "$RELEASE" in
   paper) G=ssl_graphs_1k_geom_enriched_ri;     P=ssl_graphs_1k_patchassign
          TRAIN_NAME=train_set.tar.xz;          TRAIN_SIZE=4449169028
-         TEST_NAME=test_set.tar.xz;            TEST_SIZE=1114399932;  ROT_ARGS=() ;;
+         TEST_NAME=test_set.tar.xz;            TEST_SIZE=1114399932 ;;
   rot)   G=ssl_graphs_1k_geom_enriched_ri_rot; P=ssl_graphs_1k_patchassign_rot
          TRAIN_NAME=train_set_rot.tar.xz;      TRAIN_SIZE=5943586380
-         TEST_NAME=test_set_rot.tar.xz;        TEST_SIZE=1484868888;  ROT_ARGS=(--rotated --atol 5e-4) ;;
+         TEST_NAME=test_set_rot.tar.xz;        TEST_SIZE=1484868888 ;;
   *) echo "RELEASE must be paper or rot"; exit 1 ;;
 esac
 echo "release: $RELEASE -> $G, ${P}_k*"
+REF_G="$DATA_ROOT/ssl_graphs_1k_geom_enriched_ri"; REF_P="$DATA_ROOT/ssl_graphs_1k_patchassign_k64"
+if [ "$RELEASE" = rot ] && { [ ! -d "$REF_G/train_set" ] || [ ! -d "$REF_P/train_set" ]; }; then
+  echo "!! the rotated graphs are checked against the paper graphs, but $REF_G or $REF_P is missing:"
+  echo "   ./jeanzay/restore_data.sh (tarballs in \$STORE/fw_archives) or sbatch jeanzay/build_shrec25_graphs.slurm first"
+  exit 1
+fi
 NW="${SLURM_CPUS_PER_TASK:-16}"
 cd "$PROJECT"
 mkdir -p "$DATA_ROOT" "$ARCH_DIR"
@@ -77,14 +84,19 @@ TRAIN="${TRAIN_ARCHIVE:-$(fetch "$TRAIN_NAME" "$TRAIN_SIZE")}"
 TEST="${TEST_ARCHIVE:-$(fetch "$TEST_NAME" "$TEST_SIZE")}"
 echo "  train: $TRAIN"; echo "  test:  $TEST"
 ONLY="${ONLY:-}"
-SMOKE_ARGS=(); VERIFY_ARGS=("${ROT_ARGS[@]}")
+SMOKE_ARGS=(); VERIFY_ARGS=()
 [ -n "$ONLY" ] && { SMOKE_ARGS=(--only "$ONLY"); VERIFY_ARGS+=(--present-only); }
 
 echo "== 3/5 graphs -> $DATA_ROOT/$G"
 python -u tools/shrec25_rebuild/build_shrec25_paper_graphs.py \
     --release "$RELEASE" --train-archive "$TRAIN" --test-archive "$TEST" --out "$DATA_ROOT" -j "$NW" "${SMOKE_ARGS[@]}"
-python -u tools/shrec25_rebuild/fingerprint.py verify --graphs "$DATA_ROOT/$G" \
-    --ref tools/shrec25_rebuild/fingerprints_paper.json "${VERIFY_ARGS[@]}"
+if [ "$RELEASE" = rot ]; then   # every graph id in both builds; with ONLY, just those graphs
+  python -u tools/shrec25_rebuild/compare_rotated.py --ref "$REF_G" --rot "$DATA_ROOT/$G" --workers "$NW" \
+      --out "$DATA_ROOT/$G/checks/compare_graphs.json"
+else
+  python -u tools/shrec25_rebuild/fingerprint.py verify --graphs "$DATA_ROOT/$G" \
+      --ref tools/shrec25_rebuild/fingerprints_paper.json "${VERIFY_ARGS[@]}"
+fi
 
 echo "== 4/5 patch assignments k = $KS"
 for k in $KS; do
@@ -92,8 +104,13 @@ for k in $KS; do
       --num-patches "$k" --workers "$NW"
 done
 case " $KS " in *" 64 "*)
-  python -u tools/shrec25_rebuild/fingerprint.py verify --graphs "$DATA_ROOT/$G" --patches "$DATA_ROOT/${P}_k64" \
-      --ref tools/shrec25_rebuild/fingerprints_paper.json "${VERIFY_ARGS[@]}" ;;
+  if [ "$RELEASE" = rot ]; then
+    python -u tools/shrec25_rebuild/compare_rotated.py --ref "$REF_G" --rot "$DATA_ROOT/$G" --workers "$NW" \
+        --ref-patches "$REF_P" --rot-patches "$DATA_ROOT/${P}_k64" --out "$DATA_ROOT/$G/checks/compare_patches_k64.json"
+  else
+    python -u tools/shrec25_rebuild/fingerprint.py verify --graphs "$DATA_ROOT/$G" --patches "$DATA_ROOT/${P}_k64" \
+        --ref tools/shrec25_rebuild/fingerprints_paper.json "${VERIFY_ARGS[@]}"
+  fi ;;
 esac
 
 echo "== 5/5 counts and safety copies"
