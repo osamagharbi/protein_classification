@@ -107,6 +107,13 @@ ARMS = {
                               flags=["--fusion", "gate"]),
     "r25_flat5":         dict(ds="shrec25", fg="enriched", k=64, release="rot",   # no patch stage, 5 node layers
                               flags=["--flat", "--node-layers", "5"] + ROT),
+    # multi-scale with the other two fusions, on top of the best node-level setting (invariant +
+    # bidirectional edges); compare with r25_inv_bidir. concat = per-feature weighting of the scales,
+    # mean = the learned version of the cross-k ensemble (which lost to same-k seeds by 0.006)
+    "r25_ms_concat_inv_bidir": dict(ds="shrec25", fg="enriched", ks=[16, 64, 256], release="rot",
+                                    flags=["--fusion", "concat", "--invariant", "--use-bidirectional-edges"] + ROT),
+    "r25_ms_mean_inv_bidir":   dict(ds="shrec25", fg="enriched", ks=[16, 64, 256], release="rot",
+                                    flags=["--fusion", "mean", "--invariant", "--use-bidirectional-edges"] + ROT),
 }
 STUDIES = {
     "rotation": ["s19p_inv", "s19s_inv", "s25_inv", "s25final_base", "s25final_so3", "s25final_inv"],
@@ -115,6 +122,7 @@ STUDIES = {
     "edges": ["s19p_bidir", "s19s_bidir", "s25_bidir", "s25final_inv_bidir", "s25_inv_bidir"],
     "rot25": ["r25_k64", "r25_so3", "r25_inv", "r25_bidir", "r25_inv_bidir", "r25_k16", "r25_k256",
               "r25_ms_gate_shared", "r25_ms_gate_sep", "r25_flat5"],
+    "rot25fusion": ["r25_ms_concat_inv_bidir", "r25_ms_mean_inv_bidir"],
 }
 
 
