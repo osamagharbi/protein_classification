@@ -124,8 +124,17 @@ def main():
     args = ap.parse_args()
 
     inp = Path(args.input)
-    files = [f for split in ("train_set", "test_set") if (inp / split).exists()
-             for f in sorted((inp / split).glob("*.pt"))]
+    # train_set and test_set may be the same folder (OFF meshes: both link to all/): build once
+    splits, seen_dirs, aliases = [], {}, {}
+    for split in ("train_set", "test_set"):
+        if (inp / split).exists():
+            real = (inp / split).resolve()
+            if real in seen_dirs:
+                aliases[split] = seen_dirs[real]
+            else:
+                seen_dirs[real] = split
+                splits.append(split)
+    files = [f for split in splits for f in sorted((inp / split).glob("*.pt"))]
     if args.max_graphs:
         files = files[:args.max_graphs] + [f for f in files if f.parent.name == "test_set"][:args.max_graphs]
 
@@ -165,6 +174,10 @@ def main():
                     print("[ERROR]", e, flush=True)
             if i % 1000 == 0:
                 print(f"  {i}/{len(jobs)}", flush=True)
+    for alias, target in aliases.items():                    # mirror the input's split links
+        link = out / alias
+        if not link.exists():
+            link.symlink_to(target, target_is_directory=True)
     print(f"[build_patchassign] done: ok={len(jobs) - errors} errors={errors}", flush=True)
     raise SystemExit(1 if errors else 0)
 

@@ -54,6 +54,15 @@ ROT_GRAPHS = "ssl_graphs_1k_geom_enriched_ri_rot"
 ROT_ASSIGN = "ssl_graphs_1k_patchassign_rot_k{k}"
 ROT = ["--test-rotations", "5"]
 SO3_AUG = ["--augment", "--aug-scale-std", "0", "--aug-jitter-std", "0"]
+# Non-protein OFF meshes (jeanzay/build_offmesh.slurm -> $DATA_ROOT/offmesh_<ds>, 1,024 vertices, kNN-16,
+# xyz + normals + 16-channel HKS). No official classification split: seed s = split s (SHREC2011
+# 'split10' draw s) or fold s (TOSCA 4-fold CV), files in data_labels/ (tools/offmesh/make_splits.py).
+OFF = {
+    "shrec11": dict(graphs="offmesh_shrec11", split="shrec11/split10_seed{seed}"),
+    "tosca":   dict(graphs="offmesh_tosca",   split="tosca/cv4_fold{seed}"),
+}
+BIDIR = ["--use-bidirectional-edges"]
+OFF_RECIPE = ["--epochs", "300", "--patience", "60", "--batch-size", "32"]   # 49-240 training meshes
 
 ARMS = {
     # ---------------- point 3: rotation invariance ----------------
@@ -114,6 +123,15 @@ ARMS = {
                                     flags=["--fusion", "concat", "--invariant", "--use-bidirectional-edges"] + ROT),
     "r25_ms_mean_inv_bidir":   dict(ds="shrec25", fg="enriched", ks=[16, 64, 256], release="rot",
                                     flags=["--fusion", "mean", "--invariant", "--use-bidirectional-edges"] + ROT),
+    # ---------------- non-protein meshes: SHREC2011 non-rigid (30 classes), TOSCA (9 classes) ----------------
+    # xyz alone (as on SHREC2019) vs xyz + augmentation vs HKS: which survives pose changes?
+    **{f"{p}_{name}": dict(ds=ds, fm=fm, k=64, flags=fl + BIDIR + ROT + OFF_RECIPE)
+       for p, ds in (("s11", "shrec11"), ("tos", "tosca"))
+       for name, fm, fl in (("xyz", "coords", []),
+                            ("xyz_so3", "coords", SO3_AUG),
+                            ("hks_xyz", "coords_hks", []),
+                            ("inv_hks", "coords_normals_hks", ["--invariant"]),
+                            ("inv_hks_flat5", "coords_normals_hks", ["--invariant", "--flat", "--node-layers", "5"]))},
 }
 STUDIES = {
     "rotation": ["s19p_inv", "s19s_inv", "s25_inv", "s25final_base", "s25final_so3", "s25final_inv"],
@@ -123,6 +141,8 @@ STUDIES = {
     "rot25": ["r25_k64", "r25_so3", "r25_inv", "r25_bidir", "r25_inv_bidir", "r25_k16", "r25_k256",
               "r25_ms_gate_shared", "r25_ms_gate_sep", "r25_flat5"],
     "rot25fusion": ["r25_ms_concat_inv_bidir", "r25_ms_mean_inv_bidir"],
+    "shrec11": ["s11_xyz", "s11_xyz_so3", "s11_hks_xyz", "s11_inv_hks", "s11_inv_hks_flat5"],   # seeds 1-3
+    "tosca":   ["tos_xyz", "tos_xyz_so3", "tos_hks_xyz", "tos_inv_hks", "tos_inv_hks_flat5"],   # seeds 1-4 = folds
 }
 
 
@@ -138,12 +158,19 @@ def tag(arm, seed):
     c = ARMS[arm]
     if "ks" in c:
         return f"{c['ds']}_{c['fg']}_ms{'-'.join(map(str, c['ks']))}_{arm}_gvp_h256_s{seed}"
-    return f"{c['ds']}_{c['fg']}_k{c['k']}_{arm}_gvp_h256_s{seed}"
+    return f"{c['ds']}_{c.get('fg', c.get('fm'))}_k{c['k']}_{arm}_gvp_h256_s{seed}"
 
 
 def command(arm, seed, args):
     c = ARMS[arm]
     k0 = c["ks"][0] if "ks" in c else c["k"]
+    if c["ds"] in OFF:
+        o = OFF[c["ds"]]
+        graph_dir = str(Path(args.data_root) / o["graphs"])
+        assign_dir = str(Path(args.data_root) / f"{o['graphs']}_patchassign_k{k0}")
+        tr, va, te = (str(LABELS / o["split"].format(seed=seed) / f) for f in ("train.csv", "val.csv", "test.csv"))
+        return _finish(arm, seed, args, c, graph_dir, assign_dir, None, tr, va, te, c["fm"],
+                       f"\n     OFF meshes: sbatch jeanzay/build_offmesh.slurm")
     graph_dir, assign_dir, tr, te, fmode = resolve_paths(args.data_root, c["ds"], c["fg"], k0)
     va = None
     assign_tmpl = DATASETS[c["ds"]]["assign_tmpl"]
@@ -154,23 +181,27 @@ def command(arm, seed, args):
     if c.get("labels") == "final" or c.get("release") == "rot":
         tr, va, te = (str(LABELS / "shrec25_final" / f) for f in
                       ("train_split.csv", "val_split.csv", "test_labels.csv"))
-    need = [graph_dir] + ([str(Path(args.data_root) / assign_tmpl.format(k=k))
-                           for k in c["ks"]] if "ks" in c else [assign_dir])
+    multi = [str(Path(args.data_root) / assign_tmpl.format(k=k)) for k in c["ks"]] if "ks" in c else None
+    return _finish(arm, seed, args, c, graph_dir, assign_dir, multi, tr, va, te, fmode,
+                   "\n     FINAL-release (r25_*) inputs: RELEASE=rot sbatch jeanzay/build_shrec25_graphs.slurm;")
+
+
+def _finish(arm, seed, args, c, graph_dir, assign_dir, multi, tr, va, te, fmode, hint):
+    need = [graph_dir] + (multi if multi else [assign_dir])
     missing = [p for p in need if not os.path.isdir(p)] + \
               [f for f in (tr, va, te) if f and not os.path.isfile(f)]
     if missing:
         sys.exit("[preflight] missing:\n  " + "\n  ".join(missing) +
-                 "\n  -> run ./jeanzay/restore_data.sh (and sbatch jeanzay/build_patchassign.slurm for k16/k256);"
-                 "\n     FINAL-release (r25_*) inputs: RELEASE=rot sbatch jeanzay/build_shrec25_graphs.slurm;"
-                 "\n     or submit only the arms whose data is present: ARMS=\"...\"")
+                 "\n  -> run ./jeanzay/restore_data.sh (and sbatch jeanzay/build_patchassign.slurm for k16/k256);" +
+                 hint + "\n     or submit only the arms whose data is present: ARMS=\"...\"")
     out_dir = Path(args.study_root) / "runs"
     out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-u", str(TRAIN), "--graph-dir", graph_dir, "--feature-mode", fmode,
            "--node-backbone", "gvp", "--hidden-dim", "256", "--seed", str(seed),
            "--device", "0", "--num-workers", str(args.num_workers),
            "--output-dir", str(out_dir), "--run-name", tag(arm, seed)]
-    if "ks" in c:
-        cmd += ["--multi-assign-dirs"] + need[1:]
+    if multi:
+        cmd += ["--multi-assign-dirs"] + multi
     else:
         cmd += ["--assign-dir", assign_dir]
     if tr:
@@ -184,7 +215,8 @@ def command(arm, seed, args):
         fixed.update(epochs=1, patience=1)
     for k, v in fixed.items():
         cmd += ["--" + k.replace("_", "-"), str(v)]
-    return cmd + c["flags"]
+    # smoke: 1 epoch even for arms whose flags set their own budget (OFF_RECIPE); argparse keeps the last value
+    return cmd + c["flags"] + (["--epochs", "1", "--patience", "1"] if args.smoke else [])
 
 
 def cmd_plan(args):

@@ -7,6 +7,8 @@
 #   STUDY=edges         ./jeanzay/submit_fw.sh    # bidirectional message passing (4 arms x 10 = 40 runs)
 #   STUDY=rot25         ./jeanzay/submit_fw.sh    # all SHREC2025 experiments on the FINAL rotated release (10 arms)
 #   STUDY=rot25fusion   ./jeanzay/submit_fw.sh    # multi-scale concat / mean fusion + inv + bidir (2 arms)
+#   STUDY=shrec11       ./jeanzay/submit_fw.sh    # SHREC2011 non-rigid, 5 arms, SEEDS="1 2 3" (= split draws)
+#   STUDY=tosca         ./jeanzay/submit_fw.sh    # TOSCA, 5 arms, SEEDS="1 2 3 4" (= CV folds)
 #
 # Options (env): SMOKE=1 (1 epoch, seed 1, dev QoS: check everything runs first)
 #                DRY_RUN=1  SEEDS="1 2 3"  ARMS="s25final_inv s25final_base"

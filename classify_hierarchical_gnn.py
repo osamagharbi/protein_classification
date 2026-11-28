@@ -139,6 +139,10 @@ class HierPatchDataset(Dataset):
         elif self.feature_mode == "coords_hks":
             # Intrinsic HKS plus XYZ for a controlled hybrid experiment.
             x = torch.cat([d["pos"].float(), d["hks"].float()], dim=1)
+        elif self.feature_mode == "coords_normals_hks":
+            # xyz (0-2) + normals (3-5) + 16D HKS (6-21): with --invariant the GVP-inspired
+            # encoder sees only the HKS (+ distance to centre) as scalars, xyz/normals as vectors.
+            x = torch.cat([d["pos"].float(), d["normals"].float(), d["hks"].float()], dim=1)
         elif self.feature_mode == "coords":
             # x_ssl, y_ssl, z_ssl — normalized coordinates only (3-dim)
             x = d["pos"].float()
@@ -256,6 +260,9 @@ FEATURE_LAYOUT = {
     "coords_normals":   (slice(0, 3), slice(3, 6),  []),
     "geom_14d":         (slice(5, 8), slice(2, 5),  [0, 1, 8, 9, 10, 11, 12, 13]),
     "geom_14d_raw":     (slice(5, 8), slice(2, 5),  [0, 1, 8, 9, 10, 11, 12, 13]),
+    # OFF meshes (prepare_off_hierarchy.py): HKS is intrinsic, so rotation- and pose-invariant
+    "coords_hks":         (slice(0, 3), None,        list(range(3, 19))),
+    "coords_normals_hks": (slice(0, 3), slice(3, 6), list(range(6, 22))),
 }
 
 
@@ -318,6 +325,9 @@ _FEATURE_MODE_AUG_INDICES = {
     # geom_14d / geom_14d_raw: same coord/normal layout as "all" (positions 5-7 and 2-4)
     "geom_14d":         (slice(5, 8), slice(2, 5)),
     "geom_14d_raw":     (slice(5, 8), slice(2, 5)),
+    # OFF meshes: xyz first; HKS channels are intrinsic and never rotated
+    "coords_hks":         (slice(0, 3), None),
+    "coords_normals_hks": (slice(0, 3), slice(3, 6)),
 }
 
 
@@ -1318,8 +1328,9 @@ def compute_map(labs, scores, num_classes):
 
 def xyz_nor_slices(feature_mode):
     """xyz / normal slices of the node feature vector (as used in main())."""
-    xyz = slice(0, 3) if feature_mode in ("coords", "coords_normals", "coords_potential") else slice(5, 8)
-    nor = slice(3, 6) if feature_mode == "coords_normals" else slice(2, 5)
+    xyz = slice(0, 3) if feature_mode in ("coords", "coords_normals", "coords_potential",
+                                          "coords_hks", "coords_normals_hks") else slice(5, 8)
+    nor = slice(3, 6) if feature_mode in ("coords_normals", "coords_normals_hks") else slice(2, 5)
     return xyz, nor
 
 
@@ -1399,10 +1410,11 @@ def main():
                     default="gin", help="GNN backbone for the patch-level encoder")
     ap.add_argument("--pna-delta", type=float, default=None,
                     help="PNA avg in-degree (auto-computed from data if not set)")
-    ap.add_argument("--feature-mode", choices=["all", "coords", "hks", "coords_hks", "coords_potential", "coords_normals", "all_no_normpot", "all_no_pot", "geom_14d", "geom_14d_raw"],
+    ap.add_argument("--feature-mode", choices=["all", "coords", "hks", "coords_hks", "coords_normals_hks", "coords_potential", "coords_normals", "all_no_normpot", "all_no_pot", "geom_14d", "geom_14d_raw"],
                     default="all",
                     help="all=8 features (default); coords=xyz only (3-dim, pos field); "
-                         "hks=16D intrinsic heat-kernel signature; coords_hks=xyz+HKS; "
+                         "hks=16D intrinsic heat-kernel signature (no xyz: not for the gvp backbone); coords_hks=xyz+HKS; "
+                         "coords_normals_hks=xyz+normals+HKS (22-dim, supports --invariant); "
                          "coords_normals=xyz+normals (6-dim); "
                          "geom_14d=14D (8D base + dist_centroid/anchors + surf_variation, requires geom-enriched graph-dir)")
     ap.add_argument("--rwpe-dim", type=int, default=0,

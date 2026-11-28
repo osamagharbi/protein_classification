@@ -10,6 +10,7 @@ All new model options are opt-in: existing scripts, runs and checkpoints behave 
 | 4 | Does combining resolutions in one model help? | `--multi-assign-dirs`, `--fusion`, `--share-patch-gnn` | 40 runs (SHREC2019) + 20 (SHREC2025) |
 | + | Does bidirectional message passing help? | `--use-bidirectional-edges` (existing flag) | 40 runs |
 | 5 | All SHREC2025 experiments on the FINAL release itself (rotated train and test meshes, 98 classes) | `RELEASE=rot` graph build, study `rot25` | 1 CPU job + 10 arms x seeds |
+| 6 | Does HiPatch work beyond proteins, on non-rigid shapes (SHREC2011, TOSCA)? | `jeanzay/build_offmesh.slurm`, studies `shrec11` and `tosca` | 1 CPU job + 2 x 5 arms |
 
 ## 0. Get the code
 
@@ -236,3 +237,41 @@ python tools/verify_multiscale.py --skip-structure --runs-root runs/fw_rot25/run
 - **Run names:** they encode the arm and seed. Finished runs are skipped on resubmission.
 - **Seeds:** 1–10, matching `runs/shrec19_recheck` and `runs/shrec_crosseval`, so comparisons with the single-scale reference are paired.
 - **SHREC2025 labels:** `data_labels/` holds the FINAL-release and 28 Oct 2025 label sets in our graph ID format. They were built by `tools/make_shrec25_label_sets.py`.
+
+
+## 6. Non-protein meshes: SHREC2011 non-rigid and TOSCA
+
+Do the patch model and its node-level fixes carry over to generic shapes? Both datasets contain the same objects in many poses (people, animals, hands), so xyz coordinates change with pose while the heat-kernel signature (HKS) barely does.
+
+| Dataset | Meshes | Classes | Split (no official one exists) |
+| --- | --- | --- | --- |
+| SHREC2011 non-rigid watertight | 600 | 30 × 20 | `split10`: 10 train / 10 test per class, 3 random draws (seed = draw); 2 of the 10 training meshes per class validate |
+| TOSCA | 80 | 9 (3 to 20 each) | stratified 4-fold cross-validation (seed = fold); 1 training mesh per class validates |
+
+The split files are committed in `data_labels/shrec11` and `data_labels/tosca` (`tools/offmesh/make_splits.py`).
+
+**Data.** One CPU job (about 5 minutes) downloads the official archives (NIST for SHREC2011, the CorrsBlended package for TOSCA), extracts them, regenerates the split files from the official SHREC2011 class file (stops if they differ from the committed ones), converts every mesh with `prepare_off_hierarchy.py` (1,024 vertices by FPS, kNN-16 edges, xyz + normals + 16-channel HKS) and builds k = 64 patches:
+
+```bash
+mkdir -p logs/fw && sbatch jeanzay/build_offmesh.slurm
+```
+
+**Arms** (same recipe as the other studies, bidirectional edges, 5 test rotations; 300 epochs, patience 60, batch 32 because the training sets are small):
+
+| Arm | Features | What it tests |
+| --- | --- | --- |
+| `s11_xyz` / `tos_xyz` | xyz | the SHREC2019 setting: coordinates only |
+| `*_xyz_so3` | xyz + rotation augmentation | does augmentation fix orientation? |
+| `*_hks_xyz` | xyz + HKS | intrinsic features added |
+| `*_inv_hks` | normals + HKS, `--invariant` | exactly rotation-invariant, intrinsic |
+| `*_inv_hks_flat5` | as above, no patches | does the patch stage help here? |
+
+```bash
+SMOKE=1 STUDY=shrec11 ./jeanzay/submit_fw.sh
+QOS=qos_gpu-t3 TIME=01:00:00 SEEDS="1 2 3" STUDY=shrec11 ./jeanzay/submit_fw.sh
+QOS=qos_gpu-t3 TIME=01:00:00 SEEDS="1 2 3 4" STUDY=tosca ./jeanzay/submit_fw.sh
+python jeanzay/fw_grid.py --mode agg --study shrec11 --seeds 1 2 3
+python jeanzay/fw_grid.py --mode agg --study tosca --seeds 1 2 3 4
+```
+
+**Tested locally:** the build job end to end (600 + 80 meshes, all checks pass, 78 s on 8 cores); 1-epoch runs of three arms; one full TOSCA run (`tos_inv_hks`, fold 1): accuracy 0.545, identical under rotation, 1.6 min. Earlier local single runs with a GIN encoder scored 0.74 (SHREC2011, HKS) and 0.25 to 0.50 (TOSCA).
